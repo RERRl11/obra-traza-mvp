@@ -16,10 +16,13 @@ import {
   Camera,
   FileWarning,
   FileText,
-  Layers,
   Scale,
   Clock,
-  LogOut
+  LogOut,
+  Menu,
+  X,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import LoginScreen from './components/LoginScreen';
 
@@ -229,6 +232,8 @@ export default function App() {
   const [notice, setNotice] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [usuarioActual, setUsuarioActual] = useState(null);
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [partidas, setPartidas] = usePersistentState('obra-traza-partidas', INITIAL_PARTIDAS);
   const [validacionesDoc, setValidacionesDoc] = usePersistentState('obra-traza-validaciones-doc', INITIAL_VALIDACIONES_DOC);
   const [tramites, setTramites] = usePersistentState('obra-traza-tramites', INITIAL_TRAMITES);
@@ -277,6 +282,16 @@ export default function App() {
       tramitesUrgentes
     };
   }, [partidas, tramites]);
+  const avanceChart = [
+    { periodo: 'Q1', programado: 15, real: 15 },
+    { periodo: 'Q2', programado: 35, real: 33 },
+    { periodo: 'Q3', programado: 58, real: 49 },
+    { periodo: 'Q4', programado: 80, real: Number(resumen.avanceFisicoReal) }
+  ];
+  const totalPartidasEstado = resumen.rojas + resumen.amarillas + resumen.verdes;
+  const porcentajeEstado = (cantidad) => totalPartidasEstado ? (cantidad / totalPartidasEstado) * 100 : 0;
+  const chartX = (index) => 62 + index * 128;
+  const chartY = (value) => 220 - (value * 1.72);
 
   const handleRegistrarCampo = (e) => {
     e.preventDefault();
@@ -442,106 +457,133 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800 font-sans">
-      {/* =====================================================================
-          NAVBAR PRINCIPAL (STICKY, BLANCO Y AZUL INSTITUCIONAL)
-         ===================================================================== */}
+    <div className="min-h-screen flex bg-slate-50 text-slate-800 font-sans">
       <a className="skip-link" href="#contenido">Saltar al contenido</a>
-      <header className="app-header z-50 bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center justify-between min-h-20 py-3 gap-4">
-            {/* Marca / Logo */}
-            <button
-              aria-label="OBRA TRAZA, ir al panel general"
-              onClick={() => handleTabChange('dashboard')}
-              className="flex items-center gap-3 cursor-pointer shrink-0 text-left"
-            >
-              <div className="w-10 h-10 rounded-xl bg-blue-900 flex items-center justify-center text-white shadow-sm">
-                <Building2 className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-extrabold tracking-tight text-blue-950">
-                    OBRA<span className="text-blue-700">TRAZA</span>
-                  </span>
-
-                </div>
-                <p className="text-xs text-slate-500 hidden md:block">
-                  Gestión y trazabilidad de obras
-                </p>
-              </div>
-            </button>
-
-            {/* Perfil autenticado y controles */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="min-w-0 text-right">
-                <p className="text-xs font-semibold text-slate-800 truncate">{usuarioActual.nombre}</p>
-                <p className="text-[11px] text-slate-500 truncate">{usuarioActual.etiquetaRol}</p>
-              </div>
-
-              <button
-                onClick={() => {
-                  setUsuarioActual(null);
-                  setActiveTab('dashboard');
-                }}
-                aria-label={`Cerrar sesión de ${usuarioActual.nombre}`}
-                title="Cerrar sesión"
-                className="flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold px-3 py-2 rounded-lg transition cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">Salir</span>
-              </button>
-
-              {usuarioActual.permisos.includes('EXPORTAR_CSV') && (
-                <button
-                  onClick={handleExportarReporte}
-                  className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-sm transition cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">Exportar Auditoría</span>
-                  <span className="md:hidden">CSV</span>
-                </button>
-              )}
+      {mobileSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Cerrar menú de navegación"
+          onClick={() => setMobileSidebarOpen(false)}
+          className="fixed inset-0 z-40 bg-slate-950/50 lg:hidden"
+        />
+      )}
+      <aside className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-blue-950 text-white shadow-xl transition-all duration-200 lg:sticky lg:top-0 lg:h-screen ${sidebarExpanded ? 'lg:w-64' : 'lg:w-20'} ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+        <div className="flex min-h-20 items-center justify-between border-b border-blue-900 px-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-800 text-white">
+              <Building2 className="h-5 w-5" />
+            </div>
+            <div className={sidebarExpanded ? '' : 'lg:hidden'}>
+              <p className="text-base font-extrabold tracking-tight text-white">OBRA<span className="text-unt-gold">TRAZA</span></p>
+              <p className="text-[11px] text-blue-200">Gestión de obras</p>
             </div>
           </div>
-
-          <nav aria-label="Navegación principal" className="flex overflow-x-auto gap-1.5 py-2 border-t border-slate-100">
-            {visibleNavItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  aria-current={isActive ? 'page' : undefined}
-                  onClick={() => handleTabChange(item.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition ${
-                    isActive
-                      ? 'bg-blue-900 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-blue-50 hover:text-blue-900'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {item.label}
-                </button>
-              );
-            })}
-          </nav>
+          <button
+            type="button"
+            aria-label={sidebarExpanded ? 'Contraer menú lateral' : 'Expandir menú lateral'}
+            aria-expanded={sidebarExpanded}
+            onClick={() => setSidebarExpanded(value => !value)}
+            className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-blue-100 hover:bg-blue-900 lg:flex"
+          >
+            {sidebarExpanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            aria-label="Cerrar menú"
+            onClick={() => setMobileSidebarOpen(false)}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-blue-100 hover:bg-blue-900 lg:hidden"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
-        {/* Sub-barra de Contexto del Proyecto Simulado */}
-        <div className="bg-blue-950 text-blue-100 text-xs">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <span className="font-semibold text-white flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-blue-100" />
-                Expediente: Contrato N° 014-2026-UNT/OAB
-              </span>
-              <span className="hidden sm:inline text-unt-gold">|</span>
-              <span className="text-blue-200">
-                Obra: Mejoramiento de Pabellón Académico e Infraestructura Educativa
-              </span>
+        <nav aria-label="Navegación principal" className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
+          <p className={`mb-3 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-blue-300 ${sidebarExpanded ? '' : 'lg:hidden'}`}>Módulos</p>
+          {visibleNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={item.label}
+                title={!sidebarExpanded ? item.label : undefined}
+                onClick={() => {
+                  handleTabChange(item.id);
+                  setMobileSidebarOpen(false);
+                }}
+                className={`flex min-h-11 w-full items-center gap-3 rounded-lg border-l-4 px-3 text-left text-sm font-semibold transition ${
+                  isActive
+                    ? 'border-unt-gold bg-blue-900 text-white shadow-sm'
+                    : 'border-transparent text-blue-100 hover:bg-blue-900 hover:text-white'
+                }`}
+              >
+                <Icon className="h-5 w-5 shrink-0" />
+                <span className={sidebarExpanded ? '' : 'lg:hidden'}>{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="border-t border-blue-900 p-3">
+          <div className={`mb-3 px-2 ${sidebarExpanded ? '' : 'lg:hidden'}`}>
+            <p className="truncate text-xs font-semibold text-white">{usuarioActual.nombre}</p>
+            <p className="truncate text-[11px] text-blue-300">{usuarioActual.etiquetaRol}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setUsuarioActual(null);
+              setActiveTab('dashboard');
+              setMobileSidebarOpen(false);
+            }}
+            aria-label={`Cerrar sesión de ${usuarioActual.nombre}`}
+            title={!sidebarExpanded ? 'Cerrar sesión' : undefined}
+            className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-blue-100 transition hover:bg-blue-900 hover:text-white"
+          >
+            <LogOut className="h-5 w-5 shrink-0" />
+            <span className={sidebarExpanded ? '' : 'lg:hidden'}>Cerrar sesión</span>
+          </button>
+        </div>
+      </aside>
+
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+      <header className="app-header sticky top-0 z-30 border-b border-slate-200 bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex min-h-16 items-center gap-3 py-2">
+            <button
+              type="button"
+              aria-label="Abrir menú de navegación"
+              aria-expanded={mobileSidebarOpen}
+              onClick={() => setMobileSidebarOpen(true)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-blue-900 hover:bg-blue-50 lg:hidden"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-blue-950">{visibleNavItems.find(item => item.id === activeTab)?.label}</p>
+              <p className="hidden truncate text-xs text-slate-500 sm:block">Mejoramiento de Pabellón Académico e Infraestructura Educativa</p>
             </div>
-            <span className="text-xs bg-blue-900/90 text-blue-200 px-2.5 py-0.5 rounded-full border border-blue-700/70">
+            {usuarioActual.permisos.includes('EXPORTAR_CSV') && (
+              <button
+                onClick={handleExportarReporte}
+                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-700 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-800"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Exportar Auditoría</span>
+                <span className="sm:hidden">CSV</span>
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="bg-blue-950 text-xs text-blue-100">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 lg:px-8">
+            <span className="flex items-center gap-1.5 font-semibold text-white">
+              <FileText className="h-3.5 w-3.5" />
+              Expediente: Contrato N° 014-2026-UNT/OAB
+            </span>
+            <span className="rounded-full border border-blue-700/70 bg-blue-900/90 px-2.5 py-0.5 text-blue-200">
               Demostración • Datos de ejemplo
             </span>
           </div>
@@ -551,7 +593,7 @@ export default function App() {
       {/* =====================================================================
           CONTENIDO PRINCIPAL
          ===================================================================== */}
-      <main id="contenido" tabIndex={-1} className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-7">
+      <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-7xl flex-1 px-4 py-7 sm:px-6 lg:px-8">
         <section className="page-heading">
           <div>
             <p className="institution-label">Universidad Nacional de Trujillo</p>
@@ -615,9 +657,14 @@ export default function App() {
                   </span>
                 </div>
               </div>
-              <div className="p-2.5 bg-blue-50 text-blue-700 rounded-lg border border-blue-100">
-                <Layers className="w-5 h-5" />
-              </div>
+              <svg className="h-14 w-14 shrink-0" viewBox="0 0 44 44" role="img" aria-label={`Estado de ${totalPartidasEstado} partidas: ${resumen.rojas} críticas, ${resumen.amarillas} preventivas y ${resumen.verdes} conformes`}>
+                <circle cx="22" cy="22" r="16" fill="none" stroke="#e2e8f0" strokeWidth="7" />
+                <g transform="rotate(-90 22 22)">
+                  <circle cx="22" cy="22" r="16" pathLength="100" fill="none" stroke="#dc2626" strokeWidth="7" strokeDasharray={`${porcentajeEstado(resumen.rojas)} 100`} />
+                  <circle cx="22" cy="22" r="16" pathLength="100" fill="none" stroke="#f59e0b" strokeWidth="7" strokeDasharray={`${porcentajeEstado(resumen.amarillas)} 100`} strokeDashoffset={-porcentajeEstado(resumen.rojas)} />
+                  <circle cx="22" cy="22" r="16" pathLength="100" fill="none" stroke="#059669" strokeWidth="7" strokeDasharray={`${porcentajeEstado(resumen.verdes)} 100`} strokeDashoffset={-(porcentajeEstado(resumen.rojas) + porcentajeEstado(resumen.amarillas))} />
+                </g>
+              </svg>
             </div>
             <p className="text-xs text-slate-500 mt-3 pt-2 border-t border-slate-100">
               {resumen.rojas > 0 ? 'Partidas con bloqueo o alerta crítica' : 'Todas las partidas operativas'}
@@ -755,33 +802,42 @@ export default function App() {
                     Corte Quincena 4
                   </span>
                 </div>
-                <div className="space-y-4">
-                  {[
-                    { periodo: 'Quincena 1', prog: 15, real: 15 },
-                    { periodo: 'Quincena 2', prog: 35, real: 33 },
-                    { periodo: 'Quincena 3', prog: 58, real: 49 },
-                    { periodo: 'Quincena 4 (Actual)', prog: 80, real: Number(resumen.avanceFisicoReal) }
-                  ].map((item) => (
-                    <div key={item.periodo} className="space-y-1.5">
-                      <div className="flex justify-between text-xs font-medium">
-                        <span className="text-slate-700 font-semibold">{item.periodo}</span>
-                        <span>
-                          Programado: <strong className="text-blue-900">{item.prog}%</strong> • Real:{' '}
-                          <strong className="text-blue-600">{item.real}%</strong>
-                        </span>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                          <div className="bg-blue-950 h-2 rounded-full" style={{ width: `${item.prog}%` }}></div>
-                        </div>
-                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                          <div className="bg-unt-gold h-2 rounded-full" style={{ width: `${item.real}%` }}></div>
-                        </div>
-                      </div>
-                    </div>
+                <svg className="h-64 w-full" viewBox="0 0 500 260" role="img" aria-label="Gráfico de avance programado y real por quincena">
+                  {[0, 25, 50, 75, 100].map(tick => (
+                    <g key={tick}>
+                      <line x1="52" x2="470" y1={chartY(tick)} y2={chartY(tick)} stroke="#e2e8f0" strokeDasharray="3 5" />
+                      <text x="8" y={chartY(tick) + 4} fill="#64748b" fontSize="11">{tick}%</text>
+                    </g>
                   ))}
-                </div>
-                <div className="flex items-center gap-5 mt-5 pt-4 border-t border-slate-100 text-xs text-slate-600">
+                  <polyline
+                    points={avanceChart.map((point, index) => `${chartX(index)},${chartY(point.programado)}`).join(' ')}
+                    fill="none"
+                    stroke="#172554"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <polyline
+                    points={avanceChart.map((point, index) => `${chartX(index)},${chartY(point.real)}`).join(' ')}
+                    fill="none"
+                    stroke="#e6ad09"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  {avanceChart.map((point, index) => (
+                    <g key={point.periodo}>
+                      <circle cx={chartX(index)} cy={chartY(point.programado)} r="4" fill="#172554">
+                        <title>{point.periodo}: programado {point.programado}%</title>
+                      </circle>
+                      <circle cx={chartX(index)} cy={chartY(point.real)} r="4" fill="#e6ad09">
+                        <title>{point.periodo}: real {point.real}%</title>
+                      </circle>
+                      <text x={chartX(index)} y="244" textAnchor="middle" fill="#64748b" fontSize="11">{point.periodo}</text>
+                    </g>
+                  ))}
+                </svg>
+                <div className="flex items-center gap-5 border-t border-slate-100 pt-4 text-xs text-slate-600">
                   <span className="flex items-center gap-2">
                     <span className="w-3 h-2.5 bg-blue-950 inline-block rounded-sm"></span> Avance Programado
                   </span>
@@ -1201,6 +1257,7 @@ export default function App() {
           </div>
         </div>
       </footer>
+      </div>
     </div>
   );
 }
