@@ -17,6 +17,7 @@ import {
   FileText,
   Scale,
   Clock,
+  Bell,
   LogOut,
   Menu,
   X,
@@ -249,6 +250,7 @@ const INITIAL_CONTRACT = {
   liquidacionFecha: '',
   liquidacionMonto: 0,
   observacionesCierre: '',
+  notificaciones: [],
   valorizaciones: [
     { id: 1, fecha: '2026-08-31', monto: 112500, acumulado: 25 },
     { id: 2, fecha: '2026-09-30', monto: 98500, acumulado: 46.8 },
@@ -295,6 +297,7 @@ const CSV_CONTRACT_DEFAULTS = {
   liquidacionFecha: '',
   liquidacionMonto: 0,
   observacionesCierre: '',
+  notificaciones: [],
   valorizaciones: []
 };
 
@@ -428,6 +431,7 @@ export default function App() {
   const setValidacionesDoc = update => updateContractList('validacionesDoc', update);
   const setTramites = update => updateContractList('tramites', update);
   const setBitacora = update => updateContractList('bitacora', update);
+  const setNotificaciones = update => updateContractList('notificaciones', update);
 
   // Estados Módulo 2 (Campo)
   const [selectedPartida, setSelectedPartida] = useState('03.02');
@@ -436,6 +440,7 @@ export default function App() {
   const [incidenciaTipo, setIncidenciaTipo] = useState('Ninguna');
   const [comentarioCampo, setComentarioCampo] = useState('');
   const [evidenciaNombre, setEvidenciaNombre] = useState('');
+  const [mostrarNotificaciones, setMostrarNotificaciones] = useState(false);
 
   // Estados Módulo 3 (Trámites)
   const [nuevoTramiteTipo, setNuevoTramiteTipo] = useState('Ampliación de Plazo');
@@ -516,7 +521,16 @@ export default function App() {
       return;
     }
     const generaNoConformidad = incidenciaTipo === 'No Conformidad de Calidad';
+    const generaNotificacionCritica = incidenciaTipo === 'Incidencia Crítica';
     const subsanaNoConformidad = incidenciaTipo === 'Subsanación Aprobada';
+    if (generaNotificacionCritica && usuarioActual.rol !== 'RESIDENTE') {
+      setNotice({ error: true, text: 'Solo el perfil Residente puede registrar incidencias críticas para Entidad.' });
+      return;
+    }
+    if (generaNotificacionCritica && !comentarioCampo.trim()) {
+      setNotice({ error: true, text: 'Describe la incidencia crítica para notificar a Entidad.' });
+      return;
+    }
     if (deltaAvance > 0 && !hasPermission('REGISTRAR_AVANCE')) {
       setNotice({ error: true, text: 'Tu perfil puede validar calidad, pero no registrar avances físicos.' });
       return;
@@ -553,6 +567,18 @@ export default function App() {
     };
 
     setBitacora([nuevaEntrada, ...bitacora]);
+    if (generaNotificacionCritica) {
+      setNotificaciones(current => [{
+        id: nuevaEntrada.id,
+        destinatario: 'ENTIDAD',
+        tipo: 'Incidencia crítica de calidad',
+        partida: selectedPartida,
+        detalle: comentarioCampo.trim(),
+        usuario: usuarioActual.nombre,
+        fecha: new Date().toISOString(),
+        leida: false
+      }, ...current]);
+    }
     setAvanceInput('');
     setGastoInput('');
     setComentarioCampo('');
@@ -757,6 +783,34 @@ export default function App() {
     setNotice(null);
   };
 
+  const notificaciones = contratos
+    .flatMap(contract => (contract.notificaciones || [])
+      .filter(notification => notification.destinatario === usuarioActual?.rol)
+      .map(notification => ({
+        ...notification,
+        contractId: contract.id,
+        contractNumber: contract.numero,
+        projectName: contract.nombre
+      })))
+    .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+  const notificacionesNoLeidas = notificaciones.filter(notification => !notification.leida).length;
+
+  const handleAbrirNotificacion = (notification) => {
+    setContratos(current => current.map(contract => contract.id !== notification.contractId
+      ? contract
+      : {
+          ...contract,
+          notificaciones: (contract.notificaciones || []).map(item =>
+            item.id === notification.id ? { ...item, leida: true } : item
+          )
+        }
+    ));
+    setSelectedContractId(notification.contractId);
+    setSelectedPartida(notification.partida);
+    setActiveTab('ejecucion');
+    setMostrarNotificaciones(false);
+  };
+
   const navItems = [
     { id: 'entidad', label: 'Entidad', icon: Building2, permissions: ['VER_TODO'] },
     { id: 'expediente', label: 'Expediente', icon: FileText, permissions: ['VER_TODO', 'VER_AUDITORIA', 'CONTROL_PLAZOS'] },
@@ -913,6 +967,67 @@ export default function App() {
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold text-blue-950">{visibleNavItems.find(item => item.id === activeTab)?.label}</p>
               <p className="hidden truncate text-xs text-slate-500 sm:block">Mejoramiento de Pabellón Académico e Infraestructura Educativa</p>
+            </div>
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                aria-label={`Notificaciones${notificacionesNoLeidas ? `: ${notificacionesNoLeidas} sin leer` : ''}`}
+                aria-expanded={mostrarNotificaciones}
+                aria-controls="panel-notificaciones"
+                onClick={() => setMostrarNotificaciones(open => !open)}
+                className="relative flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-blue-900 transition hover:bg-blue-50"
+              >
+                <Bell className="h-4 w-4" />
+                <span className="hidden text-xs font-semibold sm:inline">Notificaciones</span>
+                {notificacionesNoLeidas > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                    {notificacionesNoLeidas}
+                  </span>
+                )}
+              </button>
+              {mostrarNotificaciones && (
+                <section
+                  id="panel-notificaciones"
+                  aria-label="Notificaciones"
+                  className="absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+                >
+                  <div className="mb-2 flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h2 className="text-sm font-bold text-blue-950">Notificaciones</h2>
+                    <span className="text-xs text-slate-500">{notificacionesNoLeidas} sin leer</span>
+                  </div>
+                  {notificaciones.length === 0 ? (
+                    <p className="p-3 text-sm text-slate-500">No hay incidencias críticas para este perfil.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {notificaciones.map(notification => (
+                        <button
+                          key={`${notification.contractId}-${notification.id}`}
+                          type="button"
+                          onClick={() => handleAbrirNotificacion(notification)}
+                          className={`w-full rounded-lg border p-3 text-left transition hover:bg-red-50 ${
+                            notification.leida ? 'border-slate-200 bg-white' : 'border-red-200 bg-red-50/60'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-xs font-bold text-red-800">{notification.tipo}</span>
+                            <span className="shrink-0 text-[10px] font-semibold text-slate-500">
+                              {notification.leida ? 'Leída' : 'Nueva'}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs font-semibold text-blue-950">{notification.projectName}</p>
+                          <p className="mt-1 text-[11px] text-slate-600">
+                            Contrato N.° {notification.contractNumber} · Partida {notification.partida}
+                          </p>
+                          <p className="mt-2 text-xs text-slate-700">{notification.detalle}</p>
+                          <p className="mt-2 text-[10px] text-slate-500">
+                            {notification.usuario} · {new Date(notification.fecha).toLocaleString('es-PE')}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
             </div>
             {(hasPermission('EXPORTAR_PDF') || hasPermission('EXPORTAR_CSV')) && (
               <button
@@ -1500,6 +1615,7 @@ export default function App() {
                     <option value="Ninguna">Ejecución Normal (Sin incidencias)</option>
                     <option value="Observación Preventiva">Observación Preventiva (Material / Rendimiento)</option>
                     <option value="No Conformidad de Calidad">No Conformidad de Calidad (Bloquea avance)</option>
+                    {usuarioActual.rol === 'RESIDENTE' && <option value="Incidencia Crítica">Incidencia Crítica de Calidad (Notificar a Entidad)</option>}
                     {hasPermission('LEVANTAR_BLOQUEO') && <option value="Subsanación Aprobada">Subsanación Aprobada (Desbloquea partida)</option>}
                   </select>
                 </div>
@@ -1531,6 +1647,7 @@ export default function App() {
                   placeholder="Describe los trabajos realizados, ensayos de calidad o motivo de la incidencia..."
                   value={comentarioCampo}
                   onChange={(e) => setComentarioCampo(e.target.value)}
+                  required={incidenciaTipo === 'Incidencia Crítica'}
                   className="w-full border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm focus:border-blue-600 focus:outline-none"
                 ></textarea>
               </div>
