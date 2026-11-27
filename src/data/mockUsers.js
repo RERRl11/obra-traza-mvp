@@ -6,7 +6,7 @@ export const USUARIOS_SINTETICOS = [
     nombre: 'Ing. Carlos Mendoza (Simulado)',
     rol: 'ENTIDAD',
     etiquetaRol: 'Área de Infraestructura / Entidad',
-    permisos: ['VER_TODO', 'APROBAR_TRAMITE', 'EXPORTAR_CSV']
+    permisos: ['VER_TODO', 'APROBAR_TRAMITE', 'EXPORTAR_PDF']
   },
   {
     id: 'USR-02',
@@ -33,6 +33,6 @@ export const USUARIOS_SINTETICOS = [
     nombre: 'Abg. Sofía Vargas (Simulado)',
     rol: 'CONTRACTUAL',
     etiquetaRol: 'Gestión Contractual',
-    permisos: ['CONTROL_PLAZOS', 'VER_AUDITORIA', 'EXPORTAR_CSV']
+    permisos: ['CONTROL_PLAZOS', 'VER_AUDITORIA', 'EXPORTAR_PDF']
   }
 ];

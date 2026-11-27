@@ -44,8 +44,8 @@ El prototipo funcional (nivel TRL 3-4) está estructurado en cuatro módulos int
    - Control de días hábiles restantes para evitar vencimientos de plazos de pronunciamiento.
 4. **Tablero de Alertas Tempranas y Trazabilidad:**
    - Evaluación automática de indicadores mediante sistema de alertas visuales (Verde: Conforme, Amarillo: Atención preventiva, Rojo: Crítico/Bloqueado).
-   - Visualización de avance acumulado programado vs. real (Curva S).
-   - Bitácora cronológica de auditoría con registro de usuario, fecha, referencia y evidencia, con opción de exportación consolidada en formato CSV.
+   - Visualización de avance acumulado programado vs. real en barras agrupadas por quincena.
+   - Bitácora cronológica de auditoría con registro de usuario, fecha, referencia y evidencia, con exportación en PDF de un informe de auditoría: resumen ejecutivo, criterios, hallazgos, recomendaciones, detalle de partidas, verificaciones documentales, trámites y referencias de evidencia.
 
 ---
 

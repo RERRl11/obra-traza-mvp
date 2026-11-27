@@ -230,6 +230,7 @@ function evaluarEstadoPartida(p) {
 
 export default function App() {
   const [notice, setNotice] = useState(null);
+  const [exportando, setExportando] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [usuarioActual, setUsuarioActual] = useState(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
@@ -290,8 +291,10 @@ export default function App() {
   ];
   const totalPartidasEstado = resumen.rojas + resumen.amarillas + resumen.verdes;
   const porcentajeEstado = (cantidad) => totalPartidasEstado ? (cantidad / totalPartidasEstado) * 100 : 0;
-  const chartX = (index) => 62 + index * 128;
-  const chartY = (value) => 220 - (value * 1.72);
+  const chartX = (index) => 100 + index * 105;
+  const chartMax = Math.max(100, Math.ceil(Math.max(...avanceChart.map(point => point.real)) / 25) * 25);
+  const chartTicks = Array.from({ length: 5 }, (_, index) => index * chartMax / 4);
+  const chartY = (value) => 220 - (Math.max(0, value) / chartMax * 172);
 
   const handleRegistrarCampo = (e) => {
     e.preventDefault();
@@ -414,21 +417,20 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const handleExportarReporte = () => {
-    const headers = ['Codigo,Descripcion,Subcontratista,Programado,Ejecutado,Cumplimiento%,Presupuesto,Gasto,EstadoAlertas'];
-    const rows = partidas.map(p => {
-      const est = evaluarEstadoPartida(p);
-      return `"${p.codigo}","${p.descripcion}","${p.subcontratista}",${p.metradoProgramado},${p.metradoEjecutado},${est.cumplimiento}%,${p.presupuestoContratado},${p.gastoEjecutado},"${est.nivel} - ${est.etiqueta}"`;
-    });
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rows].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'REPORTE_AUDITORIA_OBRA_TRAZA.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setNotice({ text: 'Reporte CSV generado. Revisa las descargas de tu navegador.' });
+  const handleExportarReporte = async () => {
+    if (exportando || !usuarioActual.permisos.includes('EXPORTAR_PDF')) return;
+    setExportando(true);
+    try {
+      const { crearInformeAuditoria } = await import('./auditReport');
+      const doc = crearInformeAuditoria({ partidas, validacionesDoc, tramites, bitacora, usuario: usuarioActual, evaluarEstadoPartida });
+      await doc.save('INFORME_AUDITORIA_OBRA_TRAZA.pdf', { returnPromise: true });
+      setNotice({ text: 'Informe de auditoría PDF generado. Revisa las descargas de tu navegador.' });
+    } catch (error) {
+      console.error('No se pudo generar el informe PDF', error);
+      setNotice({ error: true, text: 'No se pudo generar el PDF. Intenta exportar nuevamente.' });
+    } finally {
+      setExportando(false);
+    }
   };
 
   const navItems = [
@@ -565,14 +567,16 @@ export default function App() {
               <p className="truncate text-sm font-bold text-blue-950">{visibleNavItems.find(item => item.id === activeTab)?.label}</p>
               <p className="hidden truncate text-xs text-slate-500 sm:block">Mejoramiento de Pabellón Académico e Infraestructura Educativa</p>
             </div>
-            {usuarioActual.permisos.includes('EXPORTAR_CSV') && (
+            {usuarioActual.permisos.includes('EXPORTAR_PDF') && (
               <button
                 onClick={handleExportarReporte}
+                disabled={exportando}
+                aria-busy={exportando}
                 className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-700 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-800"
               >
                 <Download className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Exportar Auditoría</span>
-                <span className="sm:hidden">CSV</span>
+                <span className="hidden sm:inline">{exportando ? 'Generando PDF…' : 'Exportar Auditoría PDF'}</span>
+                <span className="sm:hidden">{exportando ? 'Generando…' : 'PDF'}</span>
               </button>
             )}
           </div>
@@ -606,7 +610,7 @@ export default function App() {
           {notice.error ? <AlertTriangle size={20} /> : <CheckCircle2 size={20} />}
           <p>{notice.text}</p><button type="button" onClick={() => setNotice(null)} aria-label="Cerrar mensaje">Cerrar</button>
         </div>}
-        <details className="usage-help"><summary>Guía rápida de uso</summary><p>Revisa las alertas en Panel General, carga las partidas en Contrato y registra los avances en Ejecución en Obra. En Trámites puedes dar seguimiento a las solicitudes. Exportar Auditoría descarga el reporte de partidas en CSV. Los cambios de esta demostración duran hasta recargar la página.</p></details>
+        <details className="usage-help"><summary>Guía rápida de uso</summary><p>Revisa las alertas en Panel General, carga las partidas en Contrato y registra los avances en Ejecución en Obra. En Trámites puedes dar seguimiento a las solicitudes. Exportar Auditoría descarga el informe de auditoría en PDF. Los cambios de esta demostración duran hasta recargar la página.</p></details>
         {/* TARJETAS DE INDICADORES CLAVE (KPIs) */}
         <section aria-label="Indicadores generales" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition">
@@ -795,44 +799,30 @@ export default function App() {
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className="text-base font-bold text-blue-950">Curva S: Avance Programado vs. Real</h3>
+                    <h3 className="text-base font-bold text-blue-950">Avance programado vs. real</h3>
                     <p className="text-xs text-slate-500">Seguimiento acumulado por periodo quincenal</p>
                   </div>
                   <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded border border-blue-100">
                     Corte Quincena 4
                   </span>
                 </div>
-                <svg className="h-64 w-full" viewBox="0 0 500 260" role="img" aria-label="Gráfico de avance programado y real por quincena">
-                  {[0, 25, 50, 75, 100].map(tick => (
+                <svg className="h-64 w-full" viewBox="0 0 500 260" role="img" aria-label="Gráfico de barras: avance programado y real por quincena">
+                  {chartTicks.map(tick => (
                     <g key={tick}>
                       <line x1="52" x2="470" y1={chartY(tick)} y2={chartY(tick)} stroke="#e2e8f0" strokeDasharray="3 5" />
                       <text x="8" y={chartY(tick) + 4} fill="#64748b" fontSize="11">{tick}%</text>
                     </g>
                   ))}
-                  <polyline
-                    points={avanceChart.map((point, index) => `${chartX(index)},${chartY(point.programado)}`).join(' ')}
-                    fill="none"
-                    stroke="#172554"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <polyline
-                    points={avanceChart.map((point, index) => `${chartX(index)},${chartY(point.real)}`).join(' ')}
-                    fill="none"
-                    stroke="#e6ad09"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
                   {avanceChart.map((point, index) => (
                     <g key={point.periodo}>
-                      <circle cx={chartX(index)} cy={chartY(point.programado)} r="4" fill="#172554">
+                      <rect x={chartX(index) - 30} y={chartY(point.programado)} width="25" height={220 - chartY(point.programado)} rx="3" fill="#12377b">
                         <title>{point.periodo}: programado {point.programado}%</title>
-                      </circle>
-                      <circle cx={chartX(index)} cy={chartY(point.real)} r="4" fill="#e6ad09">
+                      </rect>
+                      <rect x={chartX(index) + 5} y={chartY(point.real)} width="25" height={220 - chartY(point.real)} rx="3" fill="#e6ad09">
                         <title>{point.periodo}: real {point.real}%</title>
-                      </circle>
+                      </rect>
+                      <text x={chartX(index) - 17.5} y={chartY(point.programado) - 8} textAnchor="middle" fill="#12377b" fontSize="11">{point.programado}%</text>
+                      <text x={chartX(index) + 17.5} y={chartY(point.real) - 8} textAnchor="middle" fill="#795900" fontSize="11">{point.real}%</text>
                       <text x={chartX(index)} y="244" textAnchor="middle" fill="#64748b" fontSize="11">{point.periodo}</text>
                     </g>
                   ))}
