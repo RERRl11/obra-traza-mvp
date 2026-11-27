@@ -15,7 +15,6 @@ import {
   DollarSign,
   Camera,
   FileWarning,
-  ArrowRight,
   UserCheck,
   FileText,
   Layers,
@@ -209,6 +208,7 @@ function evaluarEstadoPartida(p) {
 }
 
 export default function App() {
+  const [notice, setNotice] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [rolActivo, setRolActivo] = useState('Área de Infraestructura (Entidad)');
   const [partidas, setPartidas] = useState(INITIAL_PARTIDAS);
@@ -264,6 +264,19 @@ export default function App() {
     e.preventDefault();
     const deltaAvance = parseFloat(avanceInput) || 0;
     const deltaGasto = parseFloat(gastoInput) || 0;
+    const partida = partidas.find(p => p.codigo === selectedPartida);
+    if (!partida || deltaAvance < 0 || deltaGasto < 0 || !Number.isFinite(deltaAvance + deltaGasto)) {
+      setNotice({ error: true, text: 'Revisa la partida e ingresa valores iguales o mayores que cero.' });
+      return;
+    }
+    if (!deltaAvance && !deltaGasto && !comentarioCampo.trim() && incidenciaTipo === 'Ninguna') {
+      setNotice({ error: true, text: 'Ingresa un avance, un gasto o una observación antes de guardar.' });
+      return;
+    }
+    if (partida.metradoEjecutado + deltaAvance > partida.metradoContratado) {
+      setNotice({ error: true, text: `El avance supera el metrado contratado. Puedes registrar hasta ${partida.metradoContratado - partida.metradoEjecutado} ${partida.unidad}.` });
+      return;
+    }
     const generaNoConformidad = incidenciaTipo === 'No Conformidad de Calidad';
     const subsanaNoConformidad = incidenciaTipo === 'Subsanación Aprobada';
 
@@ -298,7 +311,7 @@ export default function App() {
     setGastoInput('');
     setComentarioCampo('');
     setEvidenciaNombre('');
-    alert('Registro guardado en la bitácora de trazabilidad.');
+    setNotice({ text: 'Registro guardado. Los indicadores y la bitácora están actualizados.' });
   };
 
   const handleAgregarTramite = (e) => {
@@ -329,6 +342,7 @@ export default function App() {
       ...bitacora
     ]);
     setNuevoTramiteAsunto('');
+    setNotice({ text: `Trámite ${nuevo.id} registrado. Ya puedes consultar su seguimiento.` });
   };
 
   const handleCargarCSVSimulado = (e) => {
@@ -359,7 +373,8 @@ export default function App() {
             };
           });
           setPartidas(parsed);
-          alert(`Se importaron ${parsed.length} partidas desde ${file.name}`);
+          setSelectedPartida(parsed[0].codigo);
+          setNotice({ text: `Se importaron ${parsed.length} partidas desde ${file.name}.` });
         }
       }
     };
@@ -380,10 +395,11 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setNotice({ text: 'Reporte CSV generado. Revisa las descargas de tu navegador.' });
   };
 
   const navItems = [
-    { id: 'dashboard', label: 'Panel General', sub: 'Alertas y Curva S', icon: LayoutDashboard },
+    { id: 'dashboard', label: 'Panel General', sub: 'Alertas y avance', icon: LayoutDashboard },
     { id: 'contrato', label: 'Contrato', sub: 'Carga y Validación', icon: FileSpreadsheet },
     { id: 'campo', label: 'Ejecución en Obra', sub: 'Avance y Calidad', icon: HardHat },
     { id: 'tramites', label: 'Trámites', sub: 'Plazos Legales', icon: FileClock }
@@ -394,13 +410,15 @@ export default function App() {
       {/* =====================================================================
           NAVBAR PRINCIPAL (STICKY, BLANCO Y AZUL INSTITUCIONAL)
          ===================================================================== */}
-      <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
+      <a className="skip-link" href="#contenido">Saltar al contenido</a>
+      <header className="app-header z-50 bg-white border-b border-slate-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 gap-4">
+          <div className="flex flex-wrap items-center justify-between min-h-20 py-3 gap-4">
             {/* Marca / Logo */}
-            <div
+            <button
+              aria-label="OBRA TRAZA, ir al panel general"
               onClick={() => setActiveTab('dashboard')}
-              className="flex items-center gap-3 cursor-pointer shrink-0"
+              className="flex items-center gap-3 cursor-pointer shrink-0 text-left"
             >
               <div className="w-10 h-10 rounded-xl bg-blue-900 flex items-center justify-center text-white shadow-sm">
                 <Building2 className="w-5 h-5" />
@@ -408,26 +426,25 @@ export default function App() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-lg font-extrabold tracking-tight text-blue-950">
-                    OBRA<span className="text-blue-600">TRAZA</span>
+                    OBRA<span className="text-blue-700">TRAZA</span>
                   </span>
-                  <span className="hidden sm:inline-block text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
-                    v1.0 MVP
-                  </span>
+
                 </div>
-                <p className="text-[11px] text-slate-500 hidden md:block">
-                  Control Contractual y Trazabilidad de Obras
+                <p className="text-xs text-slate-500 hidden md:block">
+                  Gestión y trazabilidad de obras
                 </p>
               </div>
-            </div>
+            </button>
 
             {/* Navegación Central (Desktop) */}
-            <nav className="hidden lg:flex items-center space-x-1">
+            <nav aria-label="Navegación principal" className="hidden xl:flex items-center space-x-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
                 return (
                   <button
                     key={item.id}
+                    aria-current={isActive ? 'page' : undefined}
                     onClick={() => setActiveTab(item.id)}
                     className={`flex items-center gap-2.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all ${
                       isActive
@@ -443,8 +460,8 @@ export default function App() {
             </nav>
 
             {/* Controles Derechos: Selector de Rol y Exportación */}
-            <div className="flex items-center gap-2.5">
-              <div className="hidden sm:flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
                 <UserCheck className="w-4 h-4 text-blue-700 shrink-0" />
                 <select
                   value={rolActivo}
@@ -471,13 +488,14 @@ export default function App() {
           </div>
 
           {/* Navegación Secundaria Responsive (Móvil / Tablet) */}
-          <div className="flex lg:hidden overflow-x-auto gap-1.5 py-2 border-t border-slate-100">
+          <div className="flex xl:hidden overflow-x-auto gap-1.5 py-2 border-t border-slate-100">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
+                    aria-current={isActive ? 'page' : undefined}
                   onClick={() => setActiveTab(item.id)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition ${
                     isActive
@@ -498,16 +516,16 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <span className="font-semibold text-white flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-blue-300" />
+                <FileText className="w-3.5 h-3.5 text-blue-100" />
                 Expediente: Contrato N° 014-2026-UNT/OAB
               </span>
-              <span className="hidden sm:inline text-blue-400">|</span>
+              <span className="hidden sm:inline text-unt-gold">|</span>
               <span className="text-blue-200">
                 Obra: Mejoramiento de Pabellón Académico e Infraestructura Educativa
               </span>
             </div>
-            <span className="text-[11px] bg-blue-900/90 text-blue-200 px-2.5 py-0.5 rounded-full border border-blue-700/70">
-              Entorno de Prueba • Datos Sintéticos (Ley N° 32069)
+            <span className="text-xs bg-blue-900/90 text-blue-200 px-2.5 py-0.5 rounded-full border border-blue-700/70">
+              Demostración • Datos de ejemplo
             </span>
           </div>
         </div>
@@ -516,7 +534,20 @@ export default function App() {
       {/* =====================================================================
           CONTENIDO PRINCIPAL
          ===================================================================== */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-7">
+      <main id="contenido" tabIndex={-1} className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-7">
+        <section className="page-heading">
+          <div>
+            <p className="institution-label">Universidad Nacional de Trujillo</p>
+            <h1>{navItems.find(item => item.id === activeTab)?.label}</h1>
+            <p className="page-description">{{ dashboard: 'Una visión clara del avance, los recursos y las prioridades de tu obra.', contrato: 'Centraliza las partidas y verifica la documentación del contrato.', campo: 'Registra el trabajo del día y mantén la trazabilidad de cada partida.', tramites: 'Organiza las solicitudes y da seguimiento a los plazos de atención.' }[activeTab]}</p>
+          </div>
+          <div className="project-tag"><Building2 size={18} aria-hidden="true" /><span>Infraestructura educativa<strong>Contrato 014-2026-UNT/OAB</strong></span></div>
+        </section>
+        {notice && <div className={`feedback ${notice.error ? 'feedback-error' : ''}`} role={notice.error ? 'alert' : 'status'}>
+          {notice.error ? <AlertTriangle size={20} /> : <CheckCircle2 size={20} />}
+          <p>{notice.text}</p><button type="button" onClick={() => setNotice(null)} aria-label="Cerrar mensaje">Cerrar</button>
+        </div>}
+        <details className="usage-help"><summary>Guía rápida de uso</summary><p>Revisa las alertas en Panel General, carga las partidas en Contrato y registra los avances en Ejecución en Obra. En Trámites puedes dar seguimiento a las solicitudes. Exportar Auditoría descarga el reporte de partidas en CSV. Los cambios de esta demostración duran hasta recargar la página.</p></details>
         {/* TARJETAS DE INDICADORES CLAVE (KPIs) */}
         <section aria-label="Indicadores generales" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition">
@@ -555,15 +586,15 @@ export default function App() {
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Estado de Partidas</p>
-                <div className="flex items-center gap-3 mt-2">
+                <div className="flex flex-wrap items-center gap-2 mt-2">
                   <span className="flex items-center gap-1.5 text-sm font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-100">
-                    <span className="w-2.5 h-2.5 rounded-full bg-red-600"></span> {resumen.rojas}
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-600"></span> {resumen.rojas} críticas
                   </span>
                   <span className="flex items-center gap-1.5 text-sm font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-100">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> {resumen.amarillas}
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> {resumen.amarillas} preventivas
                   </span>
                   <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span> {resumen.verdes}
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span> {resumen.verdes} conformes
                   </span>
                 </div>
               </div>
@@ -616,7 +647,7 @@ export default function App() {
                   onClick={() => setActiveTab('campo')}
                   className="bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shrink-0 flex items-center gap-1.5 transition cursor-pointer"
                 >
-                  Gestionar en Campo <ArrowRight className="w-3.5 h-3.5" />
+                  Gestionar en Campo
                 </button>
               </div>
             )}
@@ -637,16 +668,16 @@ export default function App() {
                 </span>
               </div>
 
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Partidas: desplaza horizontalmente para ver todas las columnas">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-bold uppercase tracking-wider">
-                      <th className="py-3.5 px-6">Partida y Especificación</th>
-                      <th className="py-3.5 px-4">Subcontratista</th>
-                      <th className="py-3.5 px-4">Avance Físico</th>
-                      <th className="py-3.5 px-4">Cumpl.</th>
-                      <th className="py-3.5 px-4">Ejecución Financiera</th>
-                      <th className="py-3.5 px-6">Estado</th>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs font-bold uppercase tracking-wider">
+                      <th scope="col" className="py-3.5 px-6">Partida y Especificación</th>
+                      <th scope="col" className="py-3.5 px-4">Subcontratista</th>
+                      <th scope="col" className="py-3.5 px-4">Avance Físico</th>
+                      <th scope="col" className="py-3.5 px-4">Cumpl.</th>
+                      <th scope="col" className="py-3.5 px-4">Ejecución Financiera</th>
+                      <th scope="col" className="py-3.5 px-6">Estado</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-sm">
@@ -677,7 +708,7 @@ export default function App() {
                           <td className="py-4 px-4 font-bold text-blue-950">{est.cumplimiento}%</td>
                           <td className="py-4 px-4 text-xs">
                             <p className="font-bold text-slate-900">S/ {p.gastoEjecutado.toLocaleString()}</p>
-                            <p className="text-slate-400">de S/ {p.presupuestoContratado.toLocaleString()}</p>
+                            <p className="text-slate-500">de S/ {p.presupuestoContratado.toLocaleString()}</p>
                           </td>
                           <td className="py-4 px-6">
                             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${est.color}`}>
@@ -725,7 +756,7 @@ export default function App() {
                           <div className="bg-blue-950 h-2 rounded-full" style={{ width: `${item.prog}%` }}></div>
                         </div>
                         <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                          <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${item.real}%` }}></div>
+                          <div className="bg-unt-gold h-2 rounded-full" style={{ width: `${item.real}%` }}></div>
                         </div>
                       </div>
                     </div>
@@ -736,7 +767,7 @@ export default function App() {
                     <span className="w-3 h-2.5 bg-blue-950 inline-block rounded-sm"></span> Avance Programado
                   </span>
                   <span className="flex items-center gap-2">
-                    <span className="w-3 h-2.5 bg-blue-500 inline-block rounded-sm"></span> Avance Real Ejecutado
+                    <span className="w-3 h-2.5 bg-unt-gold inline-block rounded-sm"></span> Avance Real Ejecutado
                   </span>
                 </div>
               </div>
@@ -754,14 +785,14 @@ export default function App() {
                     <div key={b.id} className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80 text-xs">
                       <div className="flex justify-between items-center text-slate-500 mb-1.5">
                         <span className="font-bold text-blue-900">{b.usuario}</span>
-                        <span className="text-[11px]">{b.fecha}</span>
+                        <span className="text-xs">{b.fecha}</span>
                       </div>
                       <p className="text-slate-700 leading-relaxed">{b.accion}</p>
                       <div className="mt-2 flex items-center gap-2">
-                        <span className="bg-white px-2 py-0.5 rounded border border-slate-200 font-mono text-[11px] text-slate-700">
+                        <span className="bg-white px-2 py-0.5 rounded border border-slate-200 font-mono text-xs text-slate-700">
                           Ref: {b.partida}
                         </span>
-                        <span className="text-blue-700 font-medium underline">{b.evidencia}</span>
+                        <span className="text-slate-600 font-medium">{b.evidencia}</span>
                       </div>
                     </div>
                   ))}
@@ -827,6 +858,8 @@ export default function App() {
                       </div>
                     </div>
                     <button
+                      aria-label={`${v.item}: ${v.estado}. Cambiar a ${v.estado === 'Conforme' ? 'Inconsistencia' : 'Conforme'}`}
+                      title="Cambiar estado de la verificación"
                       onClick={() =>
                         setValidacionesDoc(prev =>
                           prev.map(item =>
@@ -867,8 +900,8 @@ export default function App() {
 
             <form onSubmit={handleRegistrarCampo} className="space-y-5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Partida Contractual</label>
-                <select
+                <label htmlFor="field-1" className="block text-xs font-bold text-slate-700 mb-1.5">Partida Contractual</label>
+                <select id="field-1"
                   value={selectedPartida}
                   onChange={(e) => setSelectedPartida(e.target.value)}
                   className="w-full border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm bg-white focus:border-blue-600 focus:outline-none"
@@ -883,11 +916,12 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  <label htmlFor="field-2" className="block text-xs font-bold text-slate-700 mb-1.5">
                     Avance Físico del Día (Metrado)
                   </label>
-                  <input
+                  <input id="field-2"
                     type="number"
+                    min="0"
                     step="0.1"
                     placeholder="Ej. 15.5"
                     value={avanceInput}
@@ -896,11 +930,13 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  <label htmlFor="field-3" className="block text-xs font-bold text-slate-700 mb-1.5">
                     Gasto Ejecutado del Día (S/)
                   </label>
-                  <input
+                  <input id="field-3"
                     type="number"
+                    min="0"
+                    step="0.01"
                     placeholder="Ej. 4500"
                     value={gastoInput}
                     onChange={(e) => setGastoInput(e.target.value)}
@@ -911,10 +947,10 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  <label htmlFor="field-4" className="block text-xs font-bold text-slate-700 mb-1.5">
                     Estado de Calidad / Incidencia
                   </label>
-                  <select
+                  <select id="field-4"
                     value={incidenciaTipo}
                     onChange={(e) => setIncidenciaTipo(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm bg-white focus:border-blue-600 focus:outline-none"
@@ -927,12 +963,13 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  <label htmlFor="evidencia" className="block text-xs font-bold text-slate-700 mb-1.5">
                     Evidencia Fotográfica / Sustento
                   </label>
                   <div className="flex items-center gap-2 border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm bg-slate-50">
                     <Camera className="w-4 h-4 text-blue-700 shrink-0" />
                     <input
+                      id="evidencia"
                       type="text"
                       placeholder="Ej. foto_probeta_concreto.jpg"
                       value={evidenciaNombre}
@@ -944,10 +981,10 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                <label htmlFor="field-5" className="block text-xs font-bold text-slate-700 mb-1.5">
                   Detalle Técnico u Observación en Cuaderno de Obra
                 </label>
-                <textarea
+                <textarea id="field-5"
                   rows="3"
                   placeholder="Describe los trabajos realizados, ensayos de calidad o motivo de la incidencia..."
                   value={comentarioCampo}
@@ -978,8 +1015,8 @@ export default function App() {
               </p>
               <form onSubmit={handleAgregarTramite} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">Tipo de Trámite</label>
-                  <select
+                  <label htmlFor="field-6" className="block text-xs font-bold text-slate-700 mb-1.5">Tipo de Trámite</label>
+                  <select id="field-6"
                     value={nuevoTramiteTipo}
                     onChange={(e) => setNuevoTramiteTipo(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
@@ -991,8 +1028,8 @@ export default function App() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">Sustento / Asunto</label>
-                  <input
+                  <label htmlFor="field-7" className="block text-xs font-bold text-slate-700 mb-1.5">Sustento / Asunto</label>
+                  <input id="field-7"
                     type="text"
                     required
                     placeholder="Ej. Ampliación por lluvias intensas"
@@ -1002,10 +1039,10 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  <label htmlFor="field-8" className="block text-xs font-bold text-slate-700 mb-1.5">
                     Días hábiles para pronunciamiento
                   </label>
-                  <input
+                  <input id="field-8"
                     type="number"
                     min="1"
                     max="30"
@@ -1061,7 +1098,7 @@ export default function App() {
                         >
                           {t.estado === 'Atendido' ? 'Atendido' : `Vence en ${t.diasRestantes} días`}
                         </span>
-                        <p className="text-[11px] text-slate-400 mt-1">Límite: {t.fechaLimite}</p>
+                        <p className="text-xs text-slate-500 mt-1">Límite: {t.fechaLimite}</p>
                       </div>
 
                       {t.estado !== 'Atendido' && (
@@ -1100,10 +1137,10 @@ export default function App() {
                   <Building2 className="w-4 h-4" />
                 </div>
                 <span className="text-base font-extrabold tracking-tight text-white">
-                  OBRA<span className="text-blue-400">TRAZA</span>
+                  OBRA<span className="text-unt-gold">TRAZA</span>
                 </span>
               </div>
-              <p className="text-xs text-blue-300 leading-relaxed">
+              <p className="text-xs text-blue-100 leading-relaxed">
                 Plataforma digital orientada al seguimiento preventivo, trazabilidad documental y control de ejecución física y financiera en obras públicas.
               </p>
             </div>
@@ -1111,9 +1148,9 @@ export default function App() {
             {/* Columna 2: Módulos del Sistema */}
             <div>
               <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-3">
-                Arquitectura Funcional
+                Explora los módulos
               </h4>
-              <ul className="space-y-2 text-xs text-blue-300">
+              <ul className="space-y-2 text-xs text-blue-100">
                 <li>
                   <button onClick={() => setActiveTab('contrato')} className="hover:text-white transition cursor-pointer">
                     • Carga Contractual y Validación Documental
@@ -1140,10 +1177,10 @@ export default function App() {
             {/* Columna 3: Marco Normativo y Concurso */}
             <div>
               <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-3 flex items-center gap-1.5">
-                <Scale className="w-3.5 h-3.5 text-blue-400" />
+                <Scale className="w-3.5 h-3.5 text-unt-gold" />
                 Marco de Referencia
               </h4>
-              <ul className="space-y-2 text-xs text-blue-300">
+              <ul className="space-y-2 text-xs text-blue-100">
                 <li>• Ley N° 32069 — Ley General de Contrataciones Públicas</li>
                 <li>• D.S. N° 009-2025-EF — Reglamento de Contrataciones</li>
                 <li>• Desafío 01: Contrataciones públicas y ejecución de obras</li>
@@ -1152,9 +1189,9 @@ export default function App() {
             </div>
           </div>
 
-          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-blue-400">
-            <p>© 2026 OBRA TRAZA • Prototipo Funcional (TRL 3–4) desarrollado para fines de demostración académica.</p>
-            <p className="text-blue-300">Opera exclusivamente con datos sintéticos • Sin conexión a sistemas productivos.</p>
+          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-unt-gold">
+            <p>© 2026 OBRA TRAZA • MVP 1.0 • Prototipo Funcional (TRL 3–4) desarrollado para fines de demostración académica.</p>
+            <p className="text-blue-100">Opera exclusivamente con datos sintéticos • Sin conexión a sistemas productivos.</p>
           </div>
         </div>
       </footer>
