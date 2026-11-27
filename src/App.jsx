@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import {
-  LayoutDashboard,
   FileSpreadsheet,
   HardHat,
   FileClock,
@@ -25,14 +24,19 @@ import {
   ChevronRight
 } from 'lucide-react';
 import LoginScreen from './components/LoginScreen';
+import EntityDashboard from './components/EntityDashboard';
+import ProjectWorkspace from './components/ProjectWorkspace';
+import { parsePartidasCSV } from './partidasCsv';
+import { crearValidacionesDocumentales } from './documentConsistency';
 
 function usePersistentState(key, initialValue) {
   const [state, setState] = React.useState(() => {
     try {
       const saved = localStorage.getItem(key);
-      return saved ? JSON.parse(saved) : initialValue;
+      if (saved) return JSON.parse(saved);
+      return typeof initialValue === 'function' ? initialValue() : initialValue;
     } catch {
-      return initialValue;
+      return typeof initialValue === 'function' ? initialValue() : initialValue;
     }
   });
 
@@ -197,6 +201,116 @@ const INITIAL_BITACORA = [
   }
 ];
 
+const INITIAL_ENTIDAD = {
+  nombre: 'Universidad Nacional de Trujillo',
+  ruc: '20123456789',
+  nivelGobierno: 'Nacional',
+  pia: 125000000,
+  pim: 138000000
+};
+
+const INITIAL_CONTRACT = {
+  id: '014-2026-UNT/OAB',
+  numero: '014-2026-UNT/OAB',
+  nombre: 'Mejoramiento de Pabellón Académico e Infraestructura Educativa',
+  cui: '2654321',
+  ubicacion: 'Trujillo, La Libertad',
+  areaUsuaria: 'Oficina de Infraestructura',
+  expedienteTecnico: 5200000,
+  valorReferencial: 452500,
+  procedimiento: 'Licitación Pública',
+  sistema: 'Precios Unitarios',
+  modalidad: 'Por contrata',
+  fechaConvocatoria: '2026-05-01',
+  fechaBuenaPro: '2026-06-10',
+  fechaFirma: '2026-06-18',
+  contratista: 'Constructora Norte S.A.C.',
+  montoContrato: 452500,
+  plazoDias: 180,
+  fechaInicio: '2026-06-20',
+  fechaTermino: '2026-12-17',
+  adelantos: 45250,
+  montoGarantia: 45250,
+  garantiaVence: '2026-12-15',
+  penalidades: 0,
+  estado: 'Ejecución',
+  avanceProgramado: 92,
+  entregaTerrenoFecha: '2026-06-20',
+  entregaTerrenoActa: 'ACTA-TERRENO-014',
+  presupuestoModificado: 452500,
+  ampliacionesDias: 0,
+  adicionales: 0,
+  paralizacionesDias: 0,
+  recepcionEstado: 'Pendiente',
+  recepcionFecha: '',
+  recepcionActa: '',
+  liquidacionEstado: 'Pendiente',
+  liquidacionFecha: '',
+  liquidacionMonto: 0,
+  observacionesCierre: '',
+  valorizaciones: [
+    { id: 1, fecha: '2026-08-31', monto: 112500, acumulado: 25 },
+    { id: 2, fecha: '2026-09-30', monto: 98500, acumulado: 46.8 },
+    { id: 3, fecha: '2026-10-31', monto: 86800, acumulado: 66 }
+  ]
+};
+
+function crearRegistroContrato(datosContrato, id) {
+  const montoContrato = Number(datosContrato.montoContrato) || 0;
+  return {
+    ...INITIAL_CONTRACT,
+    ...datosContrato,
+    id,
+    estado: datosContrato.estado || (datosContrato.fechaFirma ? 'Ejecución' : 'Convocatoria'),
+    fechaInicio: datosContrato.fechaInicio || '',
+    fechaTermino: datosContrato.fechaTermino || '',
+    garantiaVence: datosContrato.garantiaVence || '',
+    entregaTerrenoFecha: datosContrato.entregaTerrenoFecha || '',
+    entregaTerrenoActa: datosContrato.entregaTerrenoActa || '',
+    avanceProgramado: Number(datosContrato.avanceProgramado) || 0,
+    montoGarantia: Number(datosContrato.montoGarantia) || 0,
+    adelantos: Number(datosContrato.adelantos) || 0,
+    penalidades: Number(datosContrato.penalidades) || 0,
+    presupuestoModificado: Number(datosContrato.presupuestoModificado ?? montoContrato) || 0,
+    ampliacionesDias: Number(datosContrato.ampliacionesDias) || 0,
+    adicionales: Number(datosContrato.adicionales) || 0,
+    paralizacionesDias: Number(datosContrato.paralizacionesDias) || 0,
+    recepcionEstado: datosContrato.recepcionEstado || 'Pendiente',
+    recepcionFecha: datosContrato.recepcionFecha || '',
+    recepcionActa: datosContrato.recepcionActa || '',
+    liquidacionEstado: datosContrato.liquidacionEstado || 'Pendiente',
+    liquidacionFecha: datosContrato.liquidacionFecha || '',
+    liquidacionMonto: Number(datosContrato.liquidacionMonto) || 0,
+    observacionesCierre: datosContrato.observacionesCierre || '',
+    partidas: [],
+    validacionesDoc: Array.isArray(datosContrato.validacionesDoc)
+      ? datosContrato.validacionesDoc
+      : crearValidacionesDocumentales({ ...datosContrato, montoContrato }),
+    tramites: [],
+    bitacora: [],
+    valorizaciones: []
+  };
+}
+
+function readLegacyState(key, fallback) {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function createInitialContracts() {
+  return [{
+    ...INITIAL_CONTRACT,
+    partidas: readLegacyState('obra-traza-partidas', INITIAL_PARTIDAS),
+    validacionesDoc: readLegacyState('obra-traza-validaciones-doc', INITIAL_VALIDACIONES_DOC),
+    tramites: readLegacyState('obra-traza-tramites', INITIAL_TRAMITES),
+    bitacora: readLegacyState('obra-traza-bitacora', INITIAL_BITACORA)
+  }];
+}
+
 function evaluarEstadoPartida(p) {
   const cumplimiento = p.metradoProgramado > 0 ? (p.metradoEjecutado / p.metradoProgramado) * 100 : 100;
   const desvioCosto = p.presupuestoContratado > 0 ? ((p.gastoEjecutado - p.presupuestoContratado) / p.presupuestoContratado) * 100 : 0;
@@ -231,14 +345,37 @@ function evaluarEstadoPartida(p) {
 export default function App() {
   const [notice, setNotice] = useState(null);
   const [exportando, setExportando] = useState(false);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('entidad');
   const [usuarioActual, setUsuarioActual] = useState(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [partidas, setPartidas] = usePersistentState('obra-traza-partidas', INITIAL_PARTIDAS);
-  const [validacionesDoc, setValidacionesDoc] = usePersistentState('obra-traza-validaciones-doc', INITIAL_VALIDACIONES_DOC);
-  const [tramites, setTramites] = usePersistentState('obra-traza-tramites', INITIAL_TRAMITES);
-  const [bitacora, setBitacora] = usePersistentState('obra-traza-bitacora', INITIAL_BITACORA);
+  const [contratos, setContratos] = usePersistentState('obra-traza-contratos', createInitialContracts);
+  const [entidad, setEntidad] = usePersistentState('obra-traza-entidad', INITIAL_ENTIDAD);
+  const [selectedContractId, setSelectedContractId] = useState(INITIAL_CONTRACT.id);
+  const contratoActual = contratos.find(contract => contract.id === selectedContractId) || contratos[0];
+  const partidas = contratoActual?.partidas || [];
+  const validacionesDoc = contratoActual?.validacionesDoc || [];
+  const tramites = contratoActual?.tramites || [];
+  const bitacora = contratoActual?.bitacora || [];
+  const updateCurrentContract = (update) => {
+    if (!contratoActual) return;
+    setContratos(current =>
+      current.map(contract => {
+        if (contract.id !== contratoActual.id) return contract;
+        const changes = typeof update === 'function' ? update(contract) : update;
+        return { ...contract, ...changes };
+      })
+    );
+  };
+  const updateContractList = (field, update) => {
+    updateCurrentContract(contract => ({
+      [field]: typeof update === 'function' ? update(contract[field] || []) : update
+    }));
+  };
+  const setPartidas = update => updateContractList('partidas', update);
+  const setValidacionesDoc = update => updateContractList('validacionesDoc', update);
+  const setTramites = update => updateContractList('tramites', update);
+  const setBitacora = update => updateContractList('bitacora', update);
 
   // Estados Módulo 2 (Campo)
   const [selectedPartida, setSelectedPartida] = useState('03.02');
@@ -258,8 +395,10 @@ export default function App() {
     const totalGasto = partidas.reduce((acc, p) => acc + p.gastoEjecutado, 0);
     const totalProgramado = partidas.reduce((acc, p) => acc + p.metradoProgramado, 0);
     const totalEjecutado = partidas.reduce((acc, p) => acc + p.metradoEjecutado, 0);
+    const totalMetradoContratado = partidas.reduce((acc, p) => acc + p.metradoContratado, 0);
 
     const avanceFisicoReal = totalProgramado > 0 ? ((totalEjecutado / totalProgramado) * 100).toFixed(1) : 0;
+    const avanceFisicoObra = totalMetradoContratado > 0 ? ((totalEjecutado / totalMetradoContratado) * 100).toFixed(1) : 0;
     const ejecucionFinanciera = totalPresupuesto > 0 ? ((totalGasto / totalPresupuesto) * 100).toFixed(1) : 0;
 
     let rojas = 0, amarillas = 0, verdes = 0;
@@ -276,6 +415,7 @@ export default function App() {
       totalPresupuesto,
       totalGasto,
       avanceFisicoReal,
+      avanceFisicoObra,
       ejecucionFinanciera,
       rojas,
       amarillas,
@@ -287,7 +427,7 @@ export default function App() {
     { periodo: 'Q1', programado: 15, real: 15 },
     { periodo: 'Q2', programado: 35, real: 33 },
     { periodo: 'Q3', programado: 58, real: 49 },
-    { periodo: 'Q4', programado: 80, real: Number(resumen.avanceFisicoReal) }
+    { periodo: 'Q4', programado: Number(contratoActual?.avanceProgramado || 0), real: Number(resumen.avanceFisicoObra) }
   ];
   const totalPartidasEstado = resumen.rojas + resumen.amarillas + resumen.verdes;
   const porcentajeEstado = (cantidad) => totalPartidasEstado ? (cantidad / totalPartidasEstado) * 100 : 0;
@@ -298,6 +438,10 @@ export default function App() {
 
   const handleRegistrarCampo = (e) => {
     e.preventDefault();
+    if (!hasPermission('REGISTRAR_AVANCE') && !hasPermission('REPORTAR_INCIDENCIA')) {
+      setNotice({ error: true, text: 'Tu perfil no cuenta con permisos para registrar avances o incidencias.' });
+      return;
+    }
     const deltaAvance = parseFloat(avanceInput) || 0;
     const deltaGasto = parseFloat(gastoInput) || 0;
     const partida = partidas.find(p => p.codigo === selectedPartida);
@@ -315,6 +459,14 @@ export default function App() {
     }
     const generaNoConformidad = incidenciaTipo === 'No Conformidad de Calidad';
     const subsanaNoConformidad = incidenciaTipo === 'Subsanación Aprobada';
+    if (deltaAvance > 0 && !hasPermission('REGISTRAR_AVANCE')) {
+      setNotice({ error: true, text: 'Tu perfil puede validar calidad, pero no registrar avances físicos.' });
+      return;
+    }
+    if (subsanaNoConformidad && !hasPermission('LEVANTAR_BLOQUEO')) {
+      setNotice({ error: true, text: 'Solo Supervisión o Entidad puede aprobar la subsanación de una no conformidad.' });
+      return;
+    }
 
     setPartidas(prev =>
       prev.map(p => {
@@ -350,8 +502,36 @@ export default function App() {
     setNotice({ text: 'Registro guardado. Los indicadores y la bitácora están actualizados.' });
   };
 
+  const handleAprobarSubsanacion = (codigo) => {
+    if (!hasPermission('LEVANTAR_BLOQUEO')) {
+      setNotice({ error: true, text: 'Tu perfil no cuenta con permisos para levantar bloqueos de calidad.' });
+      return;
+    }
+    const partida = partidas.find(item => item.codigo === codigo);
+    if (!partida?.noConformidad) {
+      setNotice({ error: true, text: 'La partida ya no tiene una no conformidad pendiente.' });
+      return;
+    }
+    setPartidas(current => current.map(item =>
+      item.codigo === codigo ? { ...item, noConformidad: false, observacion: 'Subsanación aprobada por Supervisión.' } : item
+    ));
+    setBitacora(current => [{
+      id: Date.now(),
+      fecha: new Date().toLocaleString('sv-SE').slice(0, 16),
+      usuario: usuarioActual.etiquetaRol,
+      partida: codigo,
+      accion: 'Subsanación de calidad aprobada; se levantó el bloqueo.',
+      evidencia: 'validacion_de_supervision'
+    }, ...current]);
+    setNotice({ text: `Bloqueo de la partida ${codigo} levantado.` });
+  };
+
   const handleAgregarTramite = (e) => {
     e.preventDefault();
+    if (!hasPermission('SOLICITAR_TRAMITE') && !hasPermission('VER_TODO')) {
+      setNotice({ error: true, text: 'Tu perfil no cuenta con permisos para solicitar trámites.' });
+      return;
+    }
     if (!nuevoTramiteAsunto.trim()) return;
     const dias = parseInt(nuevoTramiteDias, 10) || 5;
     const nuevo = {
@@ -381,48 +561,75 @@ export default function App() {
     setNotice({ text: `Trámite ${nuevo.id} registrado. Ya puedes consultar su seguimiento.` });
   };
 
-  const handleCargarCSVSimulado = (e) => {
-    const file = e.target.files?.[0];
+  const handleMarcarTramiteAtendido = (id) => {
+    if (!hasPermission('APROBAR_TRAMITE') && !hasPermission('CONTROL_PLAZOS')) {
+      setNotice({ error: true, text: 'Tu perfil no cuenta con permisos para cerrar trámites.' });
+      return;
+    }
+    setTramites(current => current.map(item =>
+      item.id === id ? { ...item, estado: 'Atendido', diasRestantes: 0 } : item
+    ));
+    setBitacora(current => [{
+      id: Date.now(),
+      fecha: new Date().toLocaleString('sv-SE').slice(0, 16),
+      usuario: usuarioActual.etiquetaRol,
+      partida: id,
+      accion: 'Trámite marcado como atendido.',
+      evidencia: 'registro_de_atencion'
+    }, ...current]);
+  };
+
+  const handleOpinarTramite = (id, opinion) => {
+    if (!hasPermission('OPINAR_TRAMITE')) return;
+    setTramites(current => current.map(item => item.id === id ? { ...item, opinion } : item));
+    setBitacora(current => [{
+      id: Date.now(),
+      fecha: new Date().toLocaleString('sv-SE').slice(0, 16),
+      usuario: usuarioActual.etiquetaRol,
+      partida: id,
+      accion: `Opinión de Supervisión registrada: ${opinion}.`,
+      evidencia: 'opinion_de_supervision'
+    }, ...current]);
+  };
+
+  const handleCargarCSVPartidas = async (event) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result;
-      if (typeof text === 'string') {
-        const lines = text.split('\n').filter(l => l.trim() !== '');
-        if (lines.length > 1) {
-          const parsed = lines.slice(1).map((line, idx) => {
-            const cols = line.split(',');
-            return {
-              codigo: cols[0]?.trim() || `05.0${idx + 1}`,
-              descripcion: cols[1]?.trim() || 'Partida Importada CSV',
-              unidad: cols[2]?.trim() || 'und',
-              metradoContratado: parseFloat(cols[3]) || 100,
-              metradoProgramado: parseFloat(cols[4]) || 50,
-              metradoEjecutado: parseFloat(cols[5]) || 40,
-              presupuestoContratado: parseFloat(cols[6]) || 25000,
-              gastoEjecutado: parseFloat(cols[7]) || 20000,
-              jornadas: 5,
-              subcontratista: cols[8]?.trim() || 'Contratista Importado S.A.C.',
-              especificacion: 'Según archivo CSV importado',
-              noConformidad: false,
-              observacion: 'Cargado desde CSV contractual.'
-            };
-          });
-          setPartidas(parsed);
-          setSelectedPartida(parsed[0].codigo);
-          setNotice({ text: `Se importaron ${parsed.length} partidas desde ${file.name}.` });
-        }
-      }
-    };
-    reader.readAsText(file);
+    try {
+      const parsed = parsePartidasCSV(await file.text());
+      const presupuestoPartidas = parsed.reduce((total, item) => total + item.presupuestoContratado, 0);
+      const validacionPresupuesto = crearValidacionesDocumentales({
+        ...contratoActual,
+        presupuestoPartidas
+      }).find(item => item.id === 'presupuesto-partidas');
+      setPartidas(parsed);
+      setSelectedPartida(parsed[0].codigo);
+      setValidacionesDoc(current => {
+        const existe = current.some(item => item.item === validacionPresupuesto.item);
+        return existe
+          ? current.map(item => item.item === validacionPresupuesto.item
+            ? { ...item, estado: validacionPresupuesto.estado, detalle: validacionPresupuesto.detalle }
+            : item)
+          : [...current, validacionPresupuesto];
+      });
+      setNotice({ text: `Se importaron ${parsed.length} partidas desde ${file.name}.` });
+    } catch (error) {
+      setNotice({
+        error: true,
+        text: error instanceof Error ? error.message : 'No se pudo leer el CSV de partidas.'
+      });
+    } finally {
+      input.value = '';
+    }
   };
 
   const handleExportarReporte = async () => {
-    if (exportando || !usuarioActual.permisos.includes('EXPORTAR_PDF')) return;
+    if (exportando || (!hasPermission('EXPORTAR_PDF') && !hasPermission('EXPORTAR_CSV'))) return;
     setExportando(true);
     try {
       const { crearInformeAuditoria } = await import('./auditReport');
-      const doc = crearInformeAuditoria({ partidas, validacionesDoc, tramites, bitacora, usuario: usuarioActual, evaluarEstadoPartida });
+      const doc = crearInformeAuditoria({ partidas, validacionesDoc, tramites, bitacora, usuario: usuarioActual, contract: contratoActual, evaluarEstadoPartida });
       await doc.save('INFORME_AUDITORIA_OBRA_TRAZA.pdf', { returnPromise: true });
       setNotice({ text: 'Informe de auditoría PDF generado. Revisa las descargas de tu navegador.' });
     } catch (error) {
@@ -433,14 +640,59 @@ export default function App() {
     }
   };
 
+  const handleCrearContrato = (datosContrato) => {
+    const nuevoContrato = crearRegistroContrato(datosContrato, `${Date.now()}`);
+    setContratos(current => [nuevoContrato, ...current]);
+    setSelectedContractId(nuevoContrato.id);
+    setSelectedPartida('');
+    setNotice({ text: `Contrato N.° ${nuevoContrato.numero} creado y seleccionado.` });
+  };
+
+  const handleImportarExpedientes = (datosExpedientes) => {
+    const numerosExistentes = new Set(contratos.map(contract => contract.numero.trim().toLowerCase()));
+    const duplicado = datosExpedientes.find(expediente => numerosExistentes.has(expediente.numero.trim().toLowerCase()));
+    if (duplicado) {
+      setNotice({ error: true, text: `El contrato N.° ${duplicado.numero} ya está asociado a un expediente cargado.` });
+      return;
+    }
+
+    const timestamp = Date.now();
+    const nuevosContratos = datosExpedientes.map((datos, index) =>
+      crearRegistroContrato(datos, `CSV-${timestamp}-${index}`)
+    );
+    setContratos(current => [...nuevosContratos, ...current]);
+    setSelectedContractId(nuevosContratos[0].id);
+    setSelectedPartida('');
+    setNotice({ text: `Se importaron ${nuevosContratos.length} expedientes con su contrato asociado. Revisa Contrato > Consistencia documental.` });
+  };
+
+  const handleSeleccionarContrato = (id) => {
+    setSelectedContractId(id);
+    const selected = contratos.find(contract => contract.id === id);
+    setSelectedPartida(selected?.partidas?.[0]?.codigo || '');
+    setNotice(null);
+  };
+
   const navItems = [
-    { id: 'dashboard', label: 'Panel General', sub: 'Alertas y avance', icon: LayoutDashboard, roles: ['ENTIDAD', 'SUPERVISOR', 'RESIDENTE', 'CONTRACTUAL'] },
-    { id: 'contrato', label: 'Contrato', sub: 'Carga y Validación', icon: FileSpreadsheet, roles: ['ENTIDAD', 'CONTRACTUAL'] },
-    { id: 'campo', label: 'Ejecución en Obra', sub: 'Avance y Calidad', icon: HardHat, roles: ['ENTIDAD', 'SUPERVISOR', 'RESIDENTE'] },
-    { id: 'tramites', label: 'Trámites', sub: 'Plazos Legales', icon: FileClock, roles: ['ENTIDAD', 'SUPERVISOR', 'RESIDENTE', 'CONTRACTUAL'] }
+    { id: 'entidad', label: 'Entidad', icon: Building2, permissions: ['VER_TODO'] },
+    { id: 'expediente', label: 'Expediente', icon: FileText, permissions: ['VER_TODO', 'VER_AUDITORIA', 'CONTROL_PLAZOS'] },
+    { id: 'contrato', label: 'Contrato', icon: FileSpreadsheet, permissions: ['VER_TODO', 'CONTROL_PLAZOS'] },
+    { id: 'ejecucion', label: 'Ejecución', icon: HardHat, permissions: ['VER_TODO', 'REGISTRAR_AVANCE', 'VALIDAR_CALIDAD'] },
+    { id: 'tramites', label: 'Trámites', icon: FileClock, permissions: ['VER_TODO', 'APROBAR_TRAMITE', 'OPINAR_TRAMITE', 'SOLICITAR_TRAMITE', 'CONTROL_PLAZOS'] },
+    { id: 'cierre', label: 'Recepción y liquidación', icon: CheckCircle2, permissions: ['VER_TODO', 'VALIDAR_CALIDAD', 'CONTROL_PLAZOS'] },
+    { id: 'auditoria', label: 'Auditoría', icon: ShieldCheck, permissions: ['VER_TODO', 'VER_AUDITORIA'] }
   ];
+  const hasPermission = (permission) => {
+    const permissions = usuarioActual?.permisos || [];
+    return permissions.includes('VER_TODO') || permissions.includes(permission);
+  };
+  const puedeCambiarContrato = hasPermission('CONTROL_PLAZOS') || hasPermission('VER_TODO');
+  const puedeEditarProyecto = hasPermission('VER_TODO');
+  const puedeValidarCalidad = hasPermission('VALIDAR_CALIDAD') || hasPermission('VER_TODO');
+  const puedeLiquidar = hasPermission('CONTROL_PLAZOS') || hasPermission('VER_TODO');
+  const puedeSolicitarTramite = hasPermission('SOLICITAR_TRAMITE') || hasPermission('VER_TODO');
   const visibleNavItems = usuarioActual
-    ? navItems.filter(item => item.roles.includes(usuarioActual.rol))
+    ? navItems.filter(item => item.permissions.some(hasPermission))
     : [];
   const canAccessTab = (tab) => visibleNavItems.some(item => item.id === tab);
   const handleTabChange = (tab) => {
@@ -452,7 +704,18 @@ export default function App() {
       <LoginScreen
         onLogin={(usuario) => {
           setUsuarioActual(usuario);
-          setActiveTab('dashboard');
+          setIncidenciaTipo('Ninguna');
+          setAvanceInput('');
+          setGastoInput('');
+          setComentarioCampo('');
+          setEvidenciaNombre('');
+          const firstTabByRole = {
+            ENTIDAD: 'entidad',
+            SUPERVISOR: 'ejecucion',
+            RESIDENTE: 'ejecucion',
+            CONTRACTUAL: 'expediente'
+          };
+          setActiveTab(firstTabByRole[usuario.rol] || 'entidad');
         }}
       />
     );
@@ -537,7 +800,7 @@ export default function App() {
             type="button"
             onClick={() => {
               setUsuarioActual(null);
-              setActiveTab('dashboard');
+              setActiveTab('entidad');
               setMobileSidebarOpen(false);
             }}
             aria-label={`Cerrar sesión de ${usuarioActual.nombre}`}
@@ -567,7 +830,7 @@ export default function App() {
               <p className="truncate text-sm font-bold text-blue-950">{visibleNavItems.find(item => item.id === activeTab)?.label}</p>
               <p className="hidden truncate text-xs text-slate-500 sm:block">Mejoramiento de Pabellón Académico e Infraestructura Educativa</p>
             </div>
-            {usuarioActual.permisos.includes('EXPORTAR_PDF') && (
+            {(hasPermission('EXPORTAR_PDF') || hasPermission('EXPORTAR_CSV')) && (
               <button
                 onClick={handleExportarReporte}
                 disabled={exportando}
@@ -582,11 +845,27 @@ export default function App() {
           </div>
         </div>
         <div className="bg-blue-950 text-xs text-blue-100">
-          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 lg:px-8">
-            <span className="flex items-center gap-1.5 font-semibold text-white">
-              <FileText className="h-3.5 w-3.5" />
-              Expediente: Contrato N° 014-2026-UNT/OAB
-            </span>
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 px-4 py-2 sm:px-6 lg:px-8">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="flex items-center gap-1.5 font-semibold text-white">
+                <FileText className="h-3.5 w-3.5" />
+                Expediente:
+              </span>
+              {puedeCambiarContrato ? (
+                <select
+                  aria-label="Seleccionar expediente y contrato asociados"
+                  value={contratoActual?.id || ''}
+                  onChange={event => handleSeleccionarContrato(event.target.value)}
+                  className="max-w-full rounded-md border border-blue-700 bg-blue-900 px-2.5 py-1 text-xs font-semibold text-white"
+                >
+                  {contratos.map(contract => (
+                    <option key={contract.id} value={contract.id}>{contract.nombre} · CUI {contract.cui} — Contrato N.° {contract.numero}</option>
+                  ))}
+                </select>
+              ) : (
+                <span className="truncate font-semibold text-white">{contratoActual?.numero}</span>
+              )}
+            </div>
             <span className="rounded-full border border-blue-700/70 bg-blue-900/90 px-2.5 py-0.5 text-blue-200">
               Demostración • Datos de ejemplo
             </span>
@@ -600,31 +879,52 @@ export default function App() {
       <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-7xl flex-1 px-4 py-7 sm:px-6 lg:px-8">
         <section className="page-heading">
           <div>
-            <p className="institution-label">Universidad Nacional de Trujillo</p>
+            <p className="institution-label">{entidad.nombre}</p>
             <h1>{visibleNavItems.find(item => item.id === activeTab)?.label}</h1>
-            <p className="page-description">{{ dashboard: 'Una visión clara del avance, los recursos y las prioridades de tu obra.', contrato: 'Centraliza las partidas y verifica la documentación del contrato.', campo: 'Registra el trabajo del día y mantén la trazabilidad de cada partida.', tramites: 'Organiza las solicitudes y da seguimiento a los plazos de atención.' }[activeTab]}</p>
+            <p className="page-description">{{
+              entidad: 'Gestiona la ficha institucional, la cartera de obras, el presupuesto y sus alertas.',
+              expediente: 'Consulta y administra los expedientes, procedimientos y fechas clave.',
+              contrato: 'Controla contratista, monto, plazo, adelantos, garantías y penalidades.',
+              ejecucion: 'Registra avances, valorizaciones, incidencias y cambios de ejecución.',
+              tramites: 'Solicita, opina y controla los plazos de las actuaciones contractuales.',
+              cierre: 'Gestiona la recepción de obra y el proceso de liquidación.',
+              auditoria: 'Consulta indicadores, alertas, trazabilidad y reportes.'
+            }[activeTab]}</p>
           </div>
-          <div className="project-tag"><Building2 size={18} aria-hidden="true" /><span>Infraestructura educativa<strong>Contrato 014-2026-UNT/OAB</strong></span></div>
+          <div className="project-tag"><Building2 size={18} aria-hidden="true" /><span>{contratoActual?.ubicacion || 'Obra seleccionada'}<strong>{contratoActual?.numero}</strong></span></div>
         </section>
         {notice && <div className={`feedback ${notice.error ? 'feedback-error' : ''}`} role={notice.error ? 'alert' : 'status'}>
           {notice.error ? <AlertTriangle size={20} /> : <CheckCircle2 size={20} />}
           <p>{notice.text}</p><button type="button" onClick={() => setNotice(null)} aria-label="Cerrar mensaje">Cerrar</button>
         </div>}
-        <details className="usage-help"><summary>Guía rápida de uso</summary><p>Revisa las alertas en Panel General, carga las partidas en Contrato y registra los avances en Ejecución en Obra. En Trámites puedes dar seguimiento a las solicitudes. Exportar Auditoría descarga el informe de auditoría en PDF. Los cambios de esta demostración duran hasta recargar la página.</p></details>
+        <details className="usage-help"><summary>Guía rápida de uso</summary><p>Los módulos disponibles dependen del perfil autenticado. Entidad gestiona la cartera y los contratos; Supervisión y Residencia registran o validan ejecución; Gestión Contractual controla plazos y auditoría. Los cambios de demostración se guardan en este navegador.</p></details>
         {/* TARJETAS DE INDICADORES CLAVE (KPIs) */}
+        {activeTab === 'entidad' && (
+          <EntityDashboard
+            entity={entidad}
+            onUpdateEntity={setEntidad}
+            contracts={contratos}
+            selectedContractId={contratoActual?.id}
+            onSelectContract={(id) => {
+              handleSeleccionarContrato(id);
+              handleTabChange('expediente');
+            }}
+          />
+        )}
+        {activeTab === 'auditoria' && (
         <section aria-label="Indicadores generales" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition">
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Avance Físico</p>
-                <p className="text-2xl font-extrabold text-blue-950 mt-1">{resumen.avanceFisicoReal}%</p>
+                <p className="text-2xl font-extrabold text-blue-950 mt-1">{resumen.avanceFisicoObra}%</p>
               </div>
               <div className="p-2.5 bg-blue-50 text-blue-700 rounded-lg border border-blue-100">
                 <Calendar className="w-5 h-5" />
               </div>
             </div>
             <p className="text-xs text-slate-500 mt-3 pt-2 border-t border-slate-100">
-              Meta programada al corte: <strong className="text-slate-700">100.0%</strong>
+              Meta programada al corte: <strong className="text-slate-700">{contratoActual?.avanceProgramado || 0}%</strong>
             </p>
           </div>
 
@@ -690,11 +990,12 @@ export default function App() {
             </p>
           </div>
         </section>
+        )}
 
         {/* =====================================================================
-            MÓDULO 4: DASHBOARD GENERAL, CURVA S Y BITÁCORA
+            MÓDULO DE AUDITORÍA: INDICADORES, CURVA Y BITÁCORA
            ===================================================================== */}
-        {activeTab === 'dashboard' && (
+        {activeTab === 'auditoria' && (
           <div className="space-y-6">
             {resumen.rojas > 0 && (
               <div className="bg-white border border-red-200 border-l-4 border-l-red-600 p-4 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -711,9 +1012,9 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-                {canAccessTab('campo') && (
+                {canAccessTab('ejecucion') && (
                   <button
-                    onClick={() => handleTabChange('campo')}
+                    onClick={() => handleTabChange('ejecucion')}
                     className="bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shrink-0 flex items-center gap-1.5 transition cursor-pointer"
                   >
                     Gestionar en Campo
@@ -867,8 +1168,62 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === 'expediente' && (
+          <ProjectWorkspace
+            section="expediente"
+            contract={contratoActual}
+            contracts={contratos}
+            canEdit={puedeEditarProyecto}
+            canControl={hasPermission('CONTROL_PLAZOS')}
+            canValidate={puedeValidarCalidad}
+            canLiquidate={puedeLiquidar}
+            onUpdateContract={updateCurrentContract}
+            onCreateContract={handleCrearContrato}
+            onImportExpedientes={handleImportarExpedientes}
+          />
+        )}
+        {activeTab === 'contrato' && (
+          <ProjectWorkspace
+            section="contrato"
+            contract={contratoActual}
+            contracts={contratos}
+            canEdit={puedeEditarProyecto}
+            canControl={hasPermission('CONTROL_PLAZOS')}
+            canValidate={puedeValidarCalidad}
+            canLiquidate={puedeLiquidar}
+            onUpdateContract={updateCurrentContract}
+            onCreateContract={handleCrearContrato}
+          />
+        )}
+        {activeTab === 'ejecucion' && (
+          <ProjectWorkspace
+            section="ejecucion"
+            contract={contratoActual}
+            contracts={contratos}
+            canEdit={puedeEditarProyecto}
+            canControl={hasPermission('CONTROL_PLAZOS')}
+            canValidate={puedeValidarCalidad}
+            canLiquidate={puedeLiquidar}
+            onUpdateContract={updateCurrentContract}
+            onCreateContract={handleCrearContrato}
+          />
+        )}
+        {activeTab === 'cierre' && (
+          <ProjectWorkspace
+            section="cierre"
+            contract={contratoActual}
+            contracts={contratos}
+            canEdit={puedeEditarProyecto}
+            canControl={hasPermission('CONTROL_PLAZOS')}
+            canValidate={puedeValidarCalidad}
+            canLiquidate={puedeLiquidar}
+            onUpdateContract={updateCurrentContract}
+            onCreateContract={handleCrearContrato}
+          />
+        )}
+
         {/* =====================================================================
-            MÓDULO 1: CARGA CONTRACTUAL Y VALIDACIÓN INICIAL
+            MÓDULO DE CONTRATO: CARGA DE PARTIDAS Y VALIDACIÓN DOCUMENTAL
            ===================================================================== */}
         {activeTab === 'contrato' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -882,20 +1237,26 @@ export default function App() {
                 </p>
               </div>
 
-              <label className="border-2 border-dashed border-blue-200 bg-blue-50/40 hover:bg-blue-50 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition text-center">
-                <div className="p-3 bg-white rounded-full shadow-sm border border-blue-100 mb-3">
-                  <Upload className="w-6 h-6 text-blue-700" />
-                </div>
-                <span className="text-sm font-bold text-blue-950">Subir archivo CSV de presupuesto</span>
-                <span className="text-xs text-slate-500 mt-1 max-w-md">
-                  Columnas: codigo, descripcion, unidad, metradoContratado, programado, ejecutado, presupuesto, gasto, subcontratista
-                </span>
-                <input type="file" accept=".csv" onChange={handleCargarCSVSimulado} className="hidden" />
-              </label>
+              {puedeEditarProyecto ? (
+                <label className="border-2 border-dashed border-blue-200 bg-blue-50/40 hover:bg-blue-50 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition text-center">
+                  <div className="p-3 bg-white rounded-full shadow-sm border border-blue-100 mb-3">
+                    <Upload className="w-6 h-6 text-blue-700" />
+                  </div>
+                  <span className="text-sm font-bold text-blue-950">Subir archivo CSV de presupuesto</span>
+                  <span className="text-xs text-slate-500 mt-1 max-w-md">
+                    Columnas: codigo, descripcion, unidad, metradoContratado, metradoProgramado, metradoEjecutado, presupuestoContratado, gastoEjecutado, subcontratista
+                  </span>
+                  <input type="file" accept=".csv,text/csv" onChange={handleCargarCSVPartidas} className="hidden" />
+                </label>
+              ) : (
+                <p className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+                  La carga de partidas está habilitada para el perfil de Entidad.
+                </p>
+              )}
 
               <div className="bg-blue-50/60 p-4 rounded-lg border border-blue-100 text-xs text-blue-950 space-y-1">
-                <p><strong>Contrato Activo:</strong> N° 014-2026-UNT/OAB</p>
-                <p><strong>Sistema de Contratación:</strong> A Precios Unitarios • Plazo: 180 días calendario</p>
+                <p><strong>Contrato Activo:</strong> N° {contratoActual?.numero}</p>
+                <p><strong>Sistema de Contratación:</strong> {contratoActual?.sistema} • Plazo: {contratoActual?.plazoDias} días calendario</p>
               </div>
             </div>
 
@@ -905,15 +1266,20 @@ export default function App() {
                   2. Verificación de Consistencia Documental
                 </h2>
                 <p className="text-xs text-slate-500 mt-1">
-                  Control previo para identificar discrepancias entre requerimiento, bases, oferta y expediente técnico.
+                  Compara plazos y presupuestos, y revisa terreno, permisos y especificaciones técnicas.
                 </p>
               </div>
+              <p className="text-xs font-semibold text-slate-600">
+                {validacionesDoc.filter(item => item.estado === 'Inconsistencia').length} inconsistencia(s) · {validacionesDoc.filter(item => item.estado === 'Pendiente').length} pendiente(s)
+              </p>
               <div className="space-y-3">
                 {validacionesDoc.map((v) => (
                   <div key={v.id} className="p-3.5 rounded-lg border border-slate-200 flex items-start justify-between gap-3 bg-slate-50/50">
                     <div className="flex items-start gap-2.5">
                       {v.estado === 'Conforme' ? (
                         <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      ) : v.estado === 'Pendiente' ? (
+                        <Clock className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
                       ) : (
                         <FileWarning className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                       )}
@@ -923,6 +1289,8 @@ export default function App() {
                       </div>
                     </div>
                     <button
+                      type="button"
+                      disabled={!puedeEditarProyecto}
                       aria-label={`${v.item}: ${v.estado}. Cambiar a ${v.estado === 'Conforme' ? 'Inconsistencia' : 'Conforme'}`}
                       title="Cambiar estado de la verificación"
                       onClick={() =>
@@ -934,10 +1302,12 @@ export default function App() {
                           )
                         )
                       }
-                      className={`text-xs px-3 py-1 rounded-md font-semibold shrink-0 cursor-pointer transition ${
+                      className={`text-xs px-3 py-1 rounded-md font-semibold shrink-0 transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         v.estado === 'Conforme'
                           ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                          : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                          : v.estado === 'Pendiente'
+                            ? 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                            : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
                       }`}
                     >
                       {v.estado}
@@ -952,7 +1322,7 @@ export default function App() {
         {/* =====================================================================
             MÓDULO 2: REGISTRO DIARIO EN CAMPO Y CONTROL DE CALIDAD
            ===================================================================== */}
-        {activeTab === 'campo' && (
+        {activeTab === 'ejecucion' && (
           <div className="max-w-3xl mx-auto bg-white p-6 sm:p-8 rounded-xl border border-slate-200 shadow-sm">
             <div className="border-b border-slate-100 pb-4 mb-6">
               <h2 className="text-lg font-bold text-blue-950">
@@ -963,6 +1333,7 @@ export default function App() {
               </p>
             </div>
 
+            {(hasPermission('REGISTRAR_AVANCE') || hasPermission('REPORTAR_INCIDENCIA')) && partidas.length > 0 && (
             <form onSubmit={handleRegistrarCampo} className="space-y-5">
               <div>
                 <label htmlFor="field-1" className="block text-xs font-bold text-slate-700 mb-1.5">Partida Contractual</label>
@@ -1023,7 +1394,7 @@ export default function App() {
                     <option value="Ninguna">Ejecución Normal (Sin incidencias)</option>
                     <option value="Observación Preventiva">Observación Preventiva (Material / Rendimiento)</option>
                     <option value="No Conformidad de Calidad">No Conformidad de Calidad (Bloquea avance)</option>
-                    <option value="Subsanación Aprobada">Subsanación Aprobada (Desbloquea partida)</option>
+                    {hasPermission('LEVANTAR_BLOQUEO') && <option value="Subsanación Aprobada">Subsanación Aprobada (Desbloquea partida)</option>}
                   </select>
                 </div>
 
@@ -1065,16 +1436,51 @@ export default function App() {
                 Guardar Registro y Actualizar Indicadores
               </button>
             </form>
+            )}
+            {(hasPermission('REGISTRAR_AVANCE') || hasPermission('REPORTAR_INCIDENCIA')) && partidas.length === 0 && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                Este expediente todavía no tiene partidas. El perfil de Entidad puede importarlas desde el módulo Contrato.
+              </p>
+            )}
+            {(hasPermission('VALIDAR_CALIDAD') || hasPermission('LEVANTAR_BLOQUEO')) && (
+              <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="font-bold text-blue-950">Validación de calidad</h3>
+                <p className="mt-1 text-xs text-slate-500">Supervisión puede aprobar la subsanación y levantar el bloqueo de una partida.</p>
+                <div className="mt-4 space-y-3">
+                  {partidas.filter(item => item.noConformidad).map(item => (
+                    <div key={item.codigo} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
+                      <div>
+                        <p className="text-sm font-bold text-red-800">{item.codigo} · {item.descripcion}</p>
+                        <p className="mt-1 text-xs text-red-700">{item.observacion}</p>
+                      </div>
+                      {hasPermission('LEVANTAR_BLOQUEO') && (
+                        <button
+                          type="button"
+                          onClick={() => handleAprobarSubsanacion(item.codigo)}
+                          className="rounded-lg bg-blue-900 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800"
+                        >
+                          Aprobar subsanación
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {partidas.every(item => !item.noConformidad) && (
+                    <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">No hay partidas bloqueadas por no conformidad.</p>
+                  )}
+                </div>
+              </section>
+            )}
           </div>
         )}
 
         {/* =====================================================================
-            MÓDULO 3: GESTIÓN DE TRÁMITES Y PLAZOS CONTRACTUALES
+            MÓDULO DE TRÁMITES Y PLAZOS CONTRACTUALES
            ===================================================================== */}
         {activeTab === 'tramites' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {puedeSolicitarTramite && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit">
-              <h2 className="text-base font-bold text-blue-950 mb-1">Nueva Actuación Contractual</h2>
+              <h2 className="text-base font-bold text-blue-950 mb-1">Nueva solicitud de trámite</h2>
               <p className="text-xs text-slate-500 mb-5">
                 Control de plazos legales para pronunciamientos (Ley N° 32069)
               </p>
@@ -1124,8 +1530,9 @@ export default function App() {
                 </button>
               </form>
             </div>
+            )}
 
-            <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className={`${puedeSolicitarTramite ? 'lg:col-span-2' : 'lg:col-span-3'} bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden`}>
               <div className="px-6 py-4 border-b border-slate-200">
                 <h2 className="text-base font-bold text-blue-950">
                   Seguimiento de Solicitudes y Vencimientos Contractuales
@@ -1148,9 +1555,25 @@ export default function App() {
                       <p className="text-xs text-slate-500 mt-1">
                         <strong>Responsable:</strong> {t.responsable} • <strong>Pendiente:</strong> {t.docsPendientes}
                       </p>
+                      {t.opinion && <p className="mt-2 text-xs font-semibold text-blue-800">Opinión de Supervisión: {t.opinion}</p>}
                     </div>
 
                     <div className="flex items-center gap-3 shrink-0">
+                      {hasPermission('OPINAR_TRAMITE') && (
+                        <label className="text-xs font-semibold text-slate-600">
+                          Opinión
+                          <select
+                            aria-label={`Registrar opinión para ${t.id}`}
+                            value={t.opinion || ''}
+                            onChange={event => handleOpinarTramite(t.id, event.target.value)}
+                            className="mt-1 block rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                          >
+                            <option value="">Pendiente</option>
+                            <option value="Conforme">Conforme</option>
+                            <option value="Observado">Observado</option>
+                          </select>
+                        </label>
+                      )}
                       <div className="text-right">
                         <span
                           className={`inline-block px-2.5 py-1 rounded-full text-xs font-bold border ${
@@ -1166,18 +1589,12 @@ export default function App() {
                         <p className="text-xs text-slate-500 mt-1">Límite: {t.fechaLimite}</p>
                       </div>
 
-                      {t.estado !== 'Atendido' && (
+                      {t.estado !== 'Atendido' && (hasPermission('APROBAR_TRAMITE') || hasPermission('CONTROL_PLAZOS')) && (
                         <button
-                          onClick={() =>
-                            setTramites(prev =>
-                              prev.map(item =>
-                                item.id === t.id ? { ...item, estado: 'Atendido', diasRestantes: 0 } : item
-                              )
-                            )
-                          }
+                          onClick={() => handleMarcarTramiteAtendido(t.id)}
                           className="text-xs bg-blue-900 hover:bg-blue-800 text-white font-medium px-3 py-1.5 rounded-lg transition cursor-pointer"
                         >
-                          Marcar Atendido
+                          {hasPermission('APROBAR_TRAMITE') ? 'Aprobar / Atendido' : 'Marcar Atendido'}
                         </button>
                       )}
                     </div>

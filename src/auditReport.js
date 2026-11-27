@@ -3,7 +3,7 @@ import { autoTable } from 'jspdf-autotable';
 
 const money = value => `S/ ${Number(value).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export function crearInformeAuditoria({ partidas, validacionesDoc, tramites, bitacora, usuario, evaluarEstadoPartida, fecha = new Date() }) {
+export function crearInformeAuditoria({ partidas, validacionesDoc, tramites, bitacora, usuario, contract, evaluarEstadoPartida, fecha = new Date() }) {
   const doc = new jsPDF();
   const azul = [18, 55, 123];
   const fechaTexto = fecha.toLocaleString('es-PE', { timeZone: 'America/Lima' });
@@ -38,7 +38,7 @@ export function crearInformeAuditoria({ partidas, validacionesDoc, tramites, bit
   const gasto = partidas.reduce((n, p) => n + p.gastoEjecutado, 0);
   doc.setProperties({ title: 'Informe de auditoría de seguimiento de obra', author: 'OBRA TRAZA', subject: 'Control contractual y trazabilidad - demostración académica' });
   titulo('INFORME DE AUDITORÍA DE SEGUIMIENTO');
-  parrafo(`Contrato N° 014-2026-UNT/OAB\nObra: Mejoramiento de Pabellón Académico e Infraestructura Educativa\nEmitido: ${fechaTexto} (hora de Lima)\nGenerado por: ${usuario.nombre} | ${usuario.etiquetaRol}`);
+  parrafo(`Contrato N° ${contract?.numero || 'No consignado'}\nObra: ${contract?.nombre || 'No consignada'}\nCUI: ${contract?.cui || 'No consignado'}\nEmitido: ${fechaTexto} (hora de Lima)\nGenerado por: ${usuario.nombre} | ${usuario.etiquetaRol}`);
   titulo('1. Objetivo y alcance');
   parrafo('Revisar el avance de las partidas, el gasto registrado, la consistencia documental y el seguimiento de trámites. El informe refleja los datos disponibles al momento de exportar. Demostración académica con datos sintéticos; no constituye un dictamen de auditoría oficial ni acredita una inspección de campo.');
   titulo('2. Resumen ejecutivo');
