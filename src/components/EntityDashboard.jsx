@@ -27,7 +27,10 @@ export default function EntityDashboard({ entity, onUpdateEntity, contracts, sel
   const [guardado, setGuardado] = useState(false);
   const cantidadPorEstado = (estado) => contracts.filter(contract => contract.estado === estado).length;
   const montoContratado = contracts.reduce((total, contract) => total + Number(contract.montoContrato || 0), 0);
-  const montoEjecutado = contracts.reduce((total, contract) => total + metricasContrato(contract).presupuestoEjecutado, 0);
+  const montoEjecutado = contracts.reduce((total, contract) => {
+    const metrics = metricasContrato(contract);
+    return total + (metrics.metradoInconsistente ? 0 : metrics.presupuestoEjecutado);
+  }, 0);
   const metricasContratos = contracts
     .map(contract => ({ contract, metrics: metricasContrato(contract) }))
     .filter(item => item.metrics.avance !== null);
@@ -157,6 +160,11 @@ export default function EntityDashboard({ entity, onUpdateEntity, contracts, sel
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Monto contratado</p>
             <p className="mt-2 text-xl font-extrabold text-blue-950">{formatoMoneda(montoContratado)}</p>
             <p className="mt-1 text-xs text-slate-500">Ejecutado: {formatoMoneda(montoEjecutado)}</p>
+            {metradosInconsistentes.length > 0 && (
+              <p className="mt-1 text-xs text-amber-800">
+                Excluye partidas de {metradosInconsistentes.length} expediente(s) con metrados inconsistentes.
+              </p>
+            )}
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
               <div className="h-full rounded-full bg-blue-800" style={{ width: `${montoContratado > 0 ? Math.min(100, (montoEjecutado / montoContratado) * 100) : 0}%` }} />
             </div>

@@ -1,5 +1,6 @@
 ﻿import { jsPDF } from 'jspdf';
 import { autoTable } from 'jspdf-autotable';
+import { calcularAvanceFisico, partidaTieneMetradoInconsistente } from './physicalProgress.js';
 
 const money = value => `S/ ${Number(value).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -34,8 +35,9 @@ export function crearInformeAuditoria({ partidas, validacionesDoc, tramites, bit
   };
   const evaluadas = partidas.map(p => ({ ...p, estado: evaluarEstadoPartida(p) }));
   const hallazgos = evaluadas.filter(p => p.estado.nivel !== 'VERDE');
-  const presupuesto = partidas.reduce((n, p) => n + p.presupuestoContratado, 0);
-  const gasto = partidas.reduce((n, p) => n + p.gastoEjecutado, 0);
+  const metradoInconsistente = calcularAvanceFisico(partidas).metradoInconsistente;
+  const presupuesto = metradoInconsistente ? null : partidas.reduce((n, p) => n + Number(p.presupuestoContratado || 0), 0);
+  const gasto = metradoInconsistente ? null : partidas.reduce((n, p) => n + Number(p.gastoEjecutado || 0), 0);
   doc.setProperties({ title: 'Informe de auditoría de seguimiento de obra', author: 'OBRA TRAZA', subject: 'Control contractual y trazabilidad - demostración académica' });
   titulo('INFORME DE AUDITORÍA DE SEGUIMIENTO');
   parrafo(`Contrato N° ${contract?.numero || 'No consignado'}\nObra: ${contract?.nombre || 'No consignada'}\nCUI: ${contract?.cui || 'No consignado'}\nEmitido: ${fechaTexto} (hora de Lima)\nGenerado por: ${usuario.nombre} | ${usuario.etiquetaRol}`);
@@ -45,8 +47,9 @@ export function crearInformeAuditoria({ partidas, validacionesDoc, tramites, bit
   tabla(['Indicador', 'Resultado'], [
     ['Partidas revisadas', String(partidas.length)],
     ['Alertas críticas / preventivas', `${evaluadas.filter(p => p.estado.nivel === 'ROJO').length} / ${evaluadas.filter(p => p.estado.nivel === 'AMARILLO').length}`],
-    ['Presupuesto contratado', money(presupuesto)], ['Gasto ejecutado', money(gasto)],
-    ['Ejecución financiera', presupuesto > 0 ? `${(gasto / presupuesto * 100).toFixed(1)}%` : 'Sin presupuesto'],
+    ['Presupuesto contratado', presupuesto === null ? 'Revisar metrados' : money(presupuesto)],
+    ['Gasto ejecutado', gasto === null ? 'Revisar metrados' : money(gasto)],
+    ['Ejecución financiera', metradoInconsistente ? 'Revisar metrados' : presupuesto > 0 ? `${(gasto / presupuesto * 100).toFixed(1)}%` : 'Sin presupuesto'],
     ['Verificaciones con inconsistencias', String(validacionesDoc.filter(v => v.estado !== 'Conforme').length)],
     ['Trámites pendientes de atención', String(tramites.filter(t => t.estado !== 'Atendido').length)],
   ]);
@@ -56,7 +59,10 @@ export function crearInformeAuditoria({ partidas, validacionesDoc, tramites, bit
   if (!hallazgos.length) parrafo('No se identificaron alertas en las partidas bajo los criterios automáticos del sistema. La documentación y los trámites se detallan en las secciones siguientes.');
   hallazgos.forEach((p, i) => {
     titulo(`H-${String(i + 1).padStart(2, '0')} | Partida ${p.codigo}`);
-    parrafo(`${p.descripcion}\nEstado: ${p.estado.etiqueta}. Cumplimiento: ${p.estado.cumplimiento}%.\nCondición registrada: ${p.observacion || 'Sin observación registrada.'}\nReferencia técnica: ${p.especificacion || 'No consignada.'}\nContratista registrado: ${p.subcontratista}\nCausa: pendiente de evaluación por el responsable.`);
+    const metradoDetalle = partidaTieneMetradoInconsistente(p)
+      ? 'Metrados inconsistentes; no se calcula el cumplimiento.'
+      : `Cumplimiento: ${p.estado.cumplimiento}%.`;
+    parrafo(`${p.descripcion}\nEstado: ${p.estado.etiqueta}. ${metradoDetalle}\nCondición registrada: ${p.observacion || 'Sin observación registrada.'}\nReferencia técnica: ${p.especificacion || 'No consignada.'}\nContratista registrado: ${p.subcontratista}\nCausa: pendiente de evaluación por el responsable.`);
     parrafo(p.noConformidad
       ? 'Riesgo: validar trabajos con una no conformidad pendiente. Acción recomendada: solicitar el sustento de calidad, verificar la subsanación y documentar su aprobación por supervisión antes de validar la partida.'
       : 'Riesgo: desviación del avance programado o del presupuesto. Acción recomendada: revisar rendimientos y costos, identificar la causa y acordar un plan correctivo con el residente y la supervisión.');
@@ -64,8 +70,11 @@ export function crearInformeAuditoria({ partidas, validacionesDoc, tramites, bit
   nuevaPagina();
   titulo('5. Detalle de partidas');
   tabla(['Partida / contratista', 'Metrado prog. / ejec.', 'Cumpl.', 'Presupuesto / gasto', 'Estado'], evaluadas.map(p => [
-    `${p.codigo} - ${p.descripcion}\n${p.subcontratista}`, `${p.metradoProgramado} / ${p.metradoEjecutado} ${p.unidad}`,
-    `${p.estado.cumplimiento}%`, `${money(p.presupuestoContratado)}\n${money(p.gastoEjecutado)}`, p.estado.etiqueta,
+    `${p.codigo} - ${p.descripcion}\n${p.subcontratista}`,
+    partidaTieneMetradoInconsistente(p) ? 'Revisar metrados' : `${p.metradoProgramado} / ${p.metradoEjecutado} ${p.unidad}`,
+    p.estado.cumplimiento === '—' ? '—' : `${p.estado.cumplimiento}%`,
+    partidaTieneMetradoInconsistente(p) ? 'Revisar datos' : `${money(p.presupuestoContratado)}\n${money(p.gastoEjecutado)}`,
+    p.estado.etiqueta,
   ]));
   titulo('6. Consistencia documental');
   tabla(['Verificación', 'Estado', 'Detalle registrado'], validacionesDoc.map(v => [v.item, v.estado, v.detalle]));

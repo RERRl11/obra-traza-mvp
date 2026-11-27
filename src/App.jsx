@@ -28,6 +28,7 @@ import EntityDashboard from './components/EntityDashboard';
 import ProjectWorkspace from './components/ProjectWorkspace';
 import { parsePartidasCSV } from './partidasCsv';
 import { crearValidacionesDocumentales } from './documentConsistency';
+import { calcularAvanceFisico, partidaTieneMetradoInconsistente } from './physicalProgress.js';
 
 function usePersistentState(key, initialValue) {
   const [state, setState] = React.useState(() => {
@@ -255,10 +256,52 @@ const INITIAL_CONTRACT = {
   ]
 };
 
-function crearRegistroContrato(datosContrato, id) {
+const CSV_CONTRACT_DEFAULTS = {
+  id: '',
+  numero: '',
+  nombre: '',
+  cui: '',
+  ubicacion: '',
+  areaUsuaria: '',
+  expedienteTecnico: 0,
+  valorReferencial: 0,
+  procedimiento: 'Licitación Pública',
+  sistema: 'Precios Unitarios',
+  modalidad: 'Por contrata',
+  fechaConvocatoria: '',
+  fechaBuenaPro: '',
+  fechaFirma: '',
+  contratista: '',
+  montoContrato: 0,
+  plazoDias: 180,
+  fechaInicio: '',
+  fechaTermino: '',
+  adelantos: 0,
+  montoGarantia: 0,
+  garantiaVence: '',
+  penalidades: 0,
+  estado: 'Convocatoria',
+  avanceProgramado: 0,
+  entregaTerrenoFecha: '',
+  entregaTerrenoActa: '',
+  presupuestoModificado: 0,
+  ampliacionesDias: 0,
+  adicionales: 0,
+  paralizacionesDias: 0,
+  recepcionEstado: 'Pendiente',
+  recepcionFecha: '',
+  recepcionActa: '',
+  liquidacionEstado: 'Pendiente',
+  liquidacionFecha: '',
+  liquidacionMonto: 0,
+  observacionesCierre: '',
+  valorizaciones: []
+};
+
+function crearRegistroContrato(datosContrato, id, defaults = INITIAL_CONTRACT) {
   const montoContrato = Number(datosContrato.montoContrato) || 0;
   return {
-    ...INITIAL_CONTRACT,
+    ...defaults,
     ...datosContrato,
     id,
     estado: datosContrato.estado || (datosContrato.fechaFirma ? 'Ejecución' : 'Convocatoria'),
@@ -312,6 +355,15 @@ function createInitialContracts() {
 }
 
 function evaluarEstadoPartida(p) {
+  if (partidaTieneMetradoInconsistente(p)) {
+    return {
+      nivel: 'ROJO',
+      etiqueta: 'Revisar metrados',
+      color: 'bg-red-50 text-red-700 border-red-200',
+      dot: 'bg-red-600',
+      cumplimiento: '—'
+    };
+  }
   const cumplimiento = p.metradoProgramado > 0 ? (p.metradoEjecutado / p.metradoProgramado) * 100 : 100;
   const desvioCosto = p.presupuestoContratado > 0 ? ((p.gastoEjecutado - p.presupuestoContratado) / p.presupuestoContratado) * 100 : 0;
 
@@ -391,15 +443,20 @@ export default function App() {
   const [nuevoTramiteDias, setNuevoTramiteDias] = useState(5);
 
   const resumen = useMemo(() => {
-    const totalPresupuesto = partidas.reduce((acc, p) => acc + p.presupuestoContratado, 0);
-    const totalGasto = partidas.reduce((acc, p) => acc + p.gastoEjecutado, 0);
-    const totalProgramado = partidas.reduce((acc, p) => acc + p.metradoProgramado, 0);
-    const totalEjecutado = partidas.reduce((acc, p) => acc + p.metradoEjecutado, 0);
-    const totalMetradoContratado = partidas.reduce((acc, p) => acc + p.metradoContratado, 0);
-
-    const avanceFisicoReal = totalProgramado > 0 ? ((totalEjecutado / totalProgramado) * 100).toFixed(1) : 0;
-    const avanceFisicoObra = totalMetradoContratado > 0 ? ((totalEjecutado / totalMetradoContratado) * 100).toFixed(1) : 0;
-    const ejecucionFinanciera = totalPresupuesto > 0 ? ((totalGasto / totalPresupuesto) * 100).toFixed(1) : 0;
+    const avanceFisico = calcularAvanceFisico(partidas);
+    const metradoInconsistente = avanceFisico.metradoInconsistente;
+    const totalPresupuesto = metradoInconsistente ? null : partidas.reduce((acc, p) => acc + Number(p.presupuestoContratado || 0), 0);
+    const totalGasto = metradoInconsistente ? null : partidas.reduce((acc, p) => acc + Number(p.gastoEjecutado || 0), 0);
+    const totalProgramado = partidas.reduce((acc, p) => acc + Number(p.metradoProgramado || 0), 0);
+    const avanceFisicoReal = metradoInconsistente
+      ? null
+      : totalProgramado > 0
+        ? ((avanceFisico.metradoEjecutado / totalProgramado) * 100).toFixed(1)
+        : null;
+    const avanceFisicoObra = avanceFisico.avance === null ? null : avanceFisico.avance.toFixed(1);
+    const ejecucionFinanciera = totalPresupuesto > 0 && totalGasto !== null
+      ? ((totalGasto / totalPresupuesto) * 100).toFixed(1)
+      : metradoInconsistente ? null : 0;
 
     let rojas = 0, amarillas = 0, verdes = 0;
     partidas.forEach(p => {
@@ -414,6 +471,7 @@ export default function App() {
     return {
       totalPresupuesto,
       totalGasto,
+      metradoInconsistente,
       avanceFisicoReal,
       avanceFisicoObra,
       ejecucionFinanciera,
@@ -427,7 +485,7 @@ export default function App() {
     { periodo: 'Q1', programado: 15, real: 15 },
     { periodo: 'Q2', programado: 35, real: 33 },
     { periodo: 'Q3', programado: 58, real: 49 },
-    { periodo: 'Q4', programado: Number(contratoActual?.avanceProgramado || 0), real: Number(resumen.avanceFisicoObra) }
+    { periodo: 'Q4', programado: Number(contratoActual?.avanceProgramado || 0), real: resumen.avanceFisicoObra === null ? null : Number(resumen.avanceFisicoObra) }
   ];
   const totalPartidasEstado = resumen.rojas + resumen.amarillas + resumen.verdes;
   const porcentajeEstado = (cantidad) => totalPartidasEstado ? (cantidad / totalPartidasEstado) * 100 : 0;
@@ -649,21 +707,47 @@ export default function App() {
   };
 
   const handleImportarExpedientes = (datosExpedientes) => {
-    const numerosExistentes = new Set(contratos.map(contract => contract.numero.trim().toLowerCase()));
-    const duplicado = datosExpedientes.find(expediente => numerosExistentes.has(expediente.numero.trim().toLowerCase()));
-    if (duplicado) {
-      setNotice({ error: true, text: `El contrato N.° ${duplicado.numero} ya está asociado a un expediente cargado.` });
-      return;
-    }
-
     const timestamp = Date.now();
-    const nuevosContratos = datosExpedientes.map((datos, index) =>
-      crearRegistroContrato(datos, `CSV-${timestamp}-${index}`)
-    );
-    setContratos(current => [...nuevosContratos, ...current]);
-    setSelectedContractId(nuevosContratos[0].id);
-    setSelectedPartida('');
-    setNotice({ text: `Se importaron ${nuevosContratos.length} expedientes con su contrato asociado. Revisa Contrato > Consistencia documental.` });
+    const reemplazos = new Map();
+    const nuevosContratos = [];
+    const idsImportados = [];
+
+    datosExpedientes.forEach((registro, index) => {
+      const { camposCSV, ...datos } = registro;
+      const key = datos.numero.trim().toLowerCase();
+      const existente = contratos.find(contract => contract.numero.trim().toLowerCase() === key);
+      if (!existente) {
+        const nuevoContrato = crearRegistroContrato(datos, `CSV-${timestamp}-${index}`, CSV_CONTRACT_DEFAULTS);
+        nuevosContratos.push(nuevoContrato);
+        idsImportados.push(nuevoContrato.id);
+        return;
+      }
+
+      const camposActualizados = Object.fromEntries(camposCSV.map(campo => [campo, datos[campo]]));
+      const datosActualizados = { ...existente, ...camposActualizados };
+      const contratoActualizado = crearRegistroContrato({
+        ...datosActualizados,
+        validacionesDoc: crearValidacionesDocumentales(datosActualizados)
+      }, existente.id, CSV_CONTRACT_DEFAULTS);
+      reemplazos.set(existente.id, {
+        ...contratoActualizado,
+        partidas: existente.partidas || [],
+        tramites: existente.tramites || [],
+        bitacora: existente.bitacora || [],
+        valorizaciones: existente.valorizaciones || []
+      });
+      idsImportados.push(existente.id);
+    });
+
+    const contratosActualizados = contratos.map(contract => reemplazos.get(contract.id) || contract);
+    const todosContratos = [...nuevosContratos, ...contratosActualizados];
+    setContratos([...nuevosContratos, ...contratosActualizados]);
+    setSelectedContractId(idsImportados[0]);
+    const contratoSeleccionado = todosContratos.find(contract => contract.id === idsImportados[0]);
+    setSelectedPartida(contratoSeleccionado?.partidas?.[0]?.codigo || '');
+    const text = `Se agregaron ${nuevosContratos.length} expediente(s) y se actualizaron ${reemplazos.size} existente(s). Se conservaron partidas y registros de ejecución.`;
+    setNotice({ text });
+    return { agregados: nuevosContratos.length, actualizados: reemplazos.size, text };
   };
 
   const handleSeleccionarContrato = (id) => {
@@ -917,7 +1001,9 @@ export default function App() {
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Avance Físico</p>
-                <p className="text-2xl font-extrabold text-blue-950 mt-1">{resumen.avanceFisicoObra}%</p>
+                <p className="text-2xl font-extrabold text-blue-950 mt-1">
+                  {resumen.metradoInconsistente ? 'Revisar metrados' : resumen.avanceFisicoObra === null ? 'Sin datos' : `${resumen.avanceFisicoObra}%`}
+                </p>
               </div>
               <div className="p-2.5 bg-blue-50 text-blue-700 rounded-lg border border-blue-100">
                 <Calendar className="w-5 h-5" />
@@ -933,7 +1019,7 @@ export default function App() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Gasto Ejecutado</p>
                 <p className="text-2xl font-extrabold text-blue-950 mt-1">
-                  S/ {resumen.totalGasto.toLocaleString()}
+                  {resumen.metradoInconsistente ? 'Revisar metrados' : `S/ ${resumen.totalGasto.toLocaleString()}`}
                 </p>
               </div>
               <div className="p-2.5 bg-blue-50 text-blue-700 rounded-lg border border-blue-100">
@@ -941,7 +1027,9 @@ export default function App() {
               </div>
             </div>
             <p className="text-xs text-slate-500 mt-3 pt-2 border-t border-slate-100">
-              <strong className="text-blue-700">{resumen.ejecucionFinanciera}%</strong> de S/ {resumen.totalPresupuesto.toLocaleString()}
+              {resumen.metradoInconsistente
+                ? 'Ejecución financiera: revisar metrados.'
+                : <><strong className="text-blue-700">{resumen.ejecucionFinanciera}%</strong> de S/ {resumen.totalPresupuesto.toLocaleString()}</>}
             </p>
           </div>
 
@@ -1067,19 +1155,27 @@ export default function App() {
                           </td>
                           <td className="py-4 px-4 text-xs font-medium text-slate-700">{p.subcontratista}</td>
                           <td className="py-4 px-4 text-xs">
-                            <span className="font-bold text-slate-900">{p.metradoEjecutado}</span>{' '}
-                            <span className="text-slate-500">/ {p.metradoProgramado} {p.unidad}</span>
-                            <div className="w-28 bg-slate-100 h-1.5 rounded-full mt-1.5 overflow-hidden">
-                              <div
-                                className="bg-blue-700 h-full rounded-full"
-                                style={{ width: `${Math.min(100, Number(est.cumplimiento))}%` }}
-                              ></div>
-                            </div>
+                            {partidaTieneMetradoInconsistente(p)
+                              ? <span className="font-semibold text-red-700">Revisar metrado</span>
+                              : <>
+                                  <span className="font-bold text-slate-900">{p.metradoEjecutado}</span>{' '}
+                                  <span className="text-slate-500">/ {p.metradoProgramado} {p.unidad}</span>
+                                  <div className="w-28 bg-slate-100 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                                    <div
+                                      className="bg-blue-700 h-full rounded-full"
+                                      style={{ width: `${Math.min(100, Number(est.cumplimiento))}%` }}
+                                    ></div>
+                                  </div>
+                                </>}
                           </td>
-                          <td className="py-4 px-4 font-bold text-blue-950">{est.cumplimiento}%</td>
+                          <td className="py-4 px-4 font-bold text-blue-950">{est.cumplimiento === '—' ? '—' : `${est.cumplimiento}%`}</td>
                           <td className="py-4 px-4 text-xs">
-                            <p className="font-bold text-slate-900">S/ {p.gastoEjecutado.toLocaleString()}</p>
-                            <p className="text-slate-500">de S/ {p.presupuestoContratado.toLocaleString()}</p>
+                            {partidaTieneMetradoInconsistente(p)
+                              ? <p className="font-semibold text-red-700">Revisar datos financieros</p>
+                              : <>
+                                  <p className="font-bold text-slate-900">S/ {p.gastoEjecutado.toLocaleString()}</p>
+                                  <p className="text-slate-500">de S/ {p.presupuestoContratado.toLocaleString()}</p>
+                                </>}
                           </td>
                           <td className="py-4 px-6">
                             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${est.color}`}>
@@ -1119,11 +1215,21 @@ export default function App() {
                       <rect x={chartX(index) - 30} y={chartY(point.programado)} width="25" height={220 - chartY(point.programado)} rx="3" fill="#12377b">
                         <title>{point.periodo}: programado {point.programado}%</title>
                       </rect>
-                      <rect x={chartX(index) + 5} y={chartY(point.real)} width="25" height={220 - chartY(point.real)} rx="3" fill="#e6ad09">
-                        <title>{point.periodo}: real {point.real}%</title>
-                      </rect>
+                      {point.real !== null && (
+                        <rect x={chartX(index) + 5} y={chartY(point.real)} width="25" height={220 - chartY(point.real)} rx="3" fill="#e6ad09">
+                          <title>{point.periodo}: real {point.real}%</title>
+                        </rect>
+                      )}
                       <text x={chartX(index) - 17.5} y={chartY(point.programado) - 8} textAnchor="middle" fill="#12377b" fontSize="11">{point.programado}%</text>
-                      <text x={chartX(index) + 17.5} y={chartY(point.real) - 8} textAnchor="middle" fill="#795900" fontSize="11">{point.real}%</text>
+                      <text
+                        x={chartX(index) + 17.5}
+                        y={point.real === null ? 216 : chartY(point.real) - 8}
+                        textAnchor="middle"
+                        fill={point.real === null ? '#b91c1c' : '#795900'}
+                        fontSize="11"
+                      >
+                        {point.real === null ? 'Revisar' : `${point.real}%`}
+                      </text>
                       <text x={chartX(index)} y="244" textAnchor="middle" fill="#64748b" fontSize="11">{point.periodo}</text>
                     </g>
                   ))}

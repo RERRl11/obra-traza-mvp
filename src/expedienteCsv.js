@@ -19,6 +19,21 @@ const OPTIONAL_NUMERIC_COLUMNS = [
 const COMPARISON_COLUMNS = ['plazoCronogramaDias', 'presupuestoPartidas'];
 const DOCUMENT_STATUS_FIELDS = ['permisoTerreno', 'especificacionesTecnicas'];
 const DOCUMENT_STATUS_OPTIONS = ['Conforme', 'Inconsistencia', 'Pendiente'];
+const CSV_IMPORT_FIELDS = [
+  ...REQUIRED_COLUMNS,
+  'ubicacion',
+  'areaUsuaria',
+  'procedimiento',
+  'sistema',
+  'modalidad',
+  'estado',
+  ...OPTIONAL_NUMERIC_COLUMNS,
+  ...COMPARISON_COLUMNS,
+  ...DATE_COLUMNS,
+  ...DOCUMENT_STATUS_FIELDS,
+  'detallePermisoTerreno',
+  'detalleEspecificacionesTecnicas'
+];
 
 function parseNumber(value, column, rowNumber, defaultValue) {
   if (!value) return defaultValue;
@@ -43,7 +58,7 @@ function validateDate(value, column, rowNumber) {
   return value;
 }
 
-export function parseExpedienteCSV(text, existingContracts = []) {
+export function parseExpedienteCSV(text) {
   const rows = parseCSVRows(text);
   if (rows.length < 2) throw new Error('El CSV debe incluir encabezados y al menos un expediente.');
 
@@ -54,7 +69,7 @@ export function parseExpedienteCSV(text, existingContracts = []) {
   }
 
   const columnIndex = Object.fromEntries(headers.map((header, index) => [header, index]));
-  const contractNumbers = new Set(existingContracts.map(contract => contract.numero.trim().toLowerCase()));
+  const contractNumbers = new Set();
   const importedExpedientes = [];
 
   rows.slice(1).forEach((values, index) => {
@@ -94,7 +109,7 @@ export function parseExpedienteCSV(text, existingContracts = []) {
         getValue(column),
         column,
         rowNumber,
-        column === 'plazoDias' ? 180 : 0
+        column === 'plazoDias' ? 180 : column === 'presupuestoModificado' ? expediente.montoContrato : 0
       );
     });
     COMPARISON_COLUMNS.forEach(column => {
@@ -136,6 +151,9 @@ export function parseExpedienteCSV(text, existingContracts = []) {
     expediente.estado = expediente.estado || (expediente.fechaFirma ? 'Ejecución' : 'Convocatoria');
 
     contractNumbers.add(numero.toLowerCase());
+    expediente.camposCSV = CSV_IMPORT_FIELDS.filter(
+      column => headers.includes(column.toLowerCase()) && getValue(column) !== ''
+    );
     importedExpedientes.push(expediente);
   });
 

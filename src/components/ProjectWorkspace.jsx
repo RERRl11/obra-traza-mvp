@@ -109,9 +109,9 @@ export default function ProjectWorkspace({
     setCsvFeedback(null);
     setImportandoCSV(true);
     try {
-      const importedExpedientes = parseExpedienteCSV(await file.text(), contracts);
-      onImportExpedientes(importedExpedientes);
-      setCsvFeedback({ text: `Se importaron ${importedExpedientes.length} expediente(s) desde ${file.name}.` });
+      const importedExpedientes = parseExpedienteCSV(await file.text());
+      const result = onImportExpedientes(importedExpedientes);
+      setCsvFeedback({ text: `${result.text} Archivo: ${file.name}.` });
     } catch (error) {
       setCsvFeedback({ error: true, text: error instanceof Error ? error.message : 'No se pudo leer el archivo CSV.' });
     } finally {
@@ -201,10 +201,10 @@ export default function ProjectWorkspace({
         )}
 
         {canEdit && (
-          <SectionCard title="Importar expedientes desde CSV" description="Una fila por expediente, con los datos del contrato asociado. El archivo debe incluir encabezados.">
+          <SectionCard title="Importar expedientes desde CSV" description="Una fila por expediente, con los datos del contrato asociado. Los números existentes se actualizan con los campos no vacíos del archivo y conservan sus partidas y registros de ejecución.">
             <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/40 p-5 text-center hover:bg-blue-50">
               <span className="text-sm font-bold text-blue-950">{importandoCSV ? 'Cargando contratos…' : 'Seleccionar archivo CSV'}</span>
-              <span className="mt-1 text-xs text-slate-500">Se evita duplicar el número de contrato asociado.</span>
+              <span className="mt-1 text-xs text-slate-500">Los contratos con el mismo número se actualizarán; los demás se agregarán.</span>
               <input
                 type="file"
                 accept=".csv,text/csv"
@@ -260,9 +260,11 @@ export default function ProjectWorkspace({
   }
 
   if (section === 'ejecucion') {
-    const executedBudget = (contract.partidas || []).reduce((total, item) => total + Number(item.gastoEjecutado || 0), 0);
     const avanceFisico = calcularAvanceFisico(contract.partidas);
     const { avance: avanceReal, metradoInconsistente } = avanceFisico;
+    const executedBudget = metradoInconsistente
+      ? null
+      : (contract.partidas || []).reduce((total, item) => total + Number(item.gastoEjecutado || 0), 0);
     const retraso = avanceReal === null ? null : Number(contract.avanceProgramado || 0) - avanceReal;
     const agregarValorizacion = (event) => {
       event.preventDefault();
@@ -297,7 +299,9 @@ export default function ProjectWorkspace({
             </div>
             <div className="rounded-lg bg-blue-50 p-4">
               <p className="text-xs font-semibold text-slate-500">Presupuesto ejecutado</p>
-              <p className="mt-1 text-lg font-extrabold text-blue-950">{formatCurrency(executedBudget)}</p>
+              <p className="mt-1 text-lg font-extrabold text-blue-950">
+                {executedBudget === null ? 'Revisar metrados' : formatCurrency(executedBudget)}
+              </p>
             </div>
           </div>
           {retraso !== null && retraso >= 5 && (
@@ -307,7 +311,7 @@ export default function ProjectWorkspace({
           )}
           {metradoInconsistente && (
             <p className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800" role="alert">
-              El metrado programado o ejecutado supera el contratado. Revisa las partidas importadas.
+              Hay metrados negativos, no numéricos o que superan lo contratado. Se ocultan los totales derivados; revisa las partidas importadas.
             </p>
           )}
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
