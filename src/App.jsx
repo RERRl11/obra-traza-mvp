@@ -19,8 +19,27 @@ import {
   FileText,
   Layers,
   Scale,
-  Clock
+  Clock,
+  LogOut
 } from 'lucide-react';
+import LoginScreen from './components/LoginScreen';
+
+function usePersistentState(key, initialValue) {
+  const [state, setState] = React.useState(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem(key, JSON.stringify(state));
+  }, [key, state]);
+
+  return [state, setState];
+}
 
 // DATOS SINTÉTICOS INICIALES (Proyecto Simulado: Infraestructura Educativa / Universitaria)
 const INITIAL_PARTIDAS = [
@@ -210,11 +229,12 @@ function evaluarEstadoPartida(p) {
 export default function App() {
   const [notice, setNotice] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [rolActivo, setRolActivo] = useState('Área de Infraestructura (Entidad)');
-  const [partidas, setPartidas] = useState(INITIAL_PARTIDAS);
-  const [validacionesDoc, setValidacionesDoc] = useState(INITIAL_VALIDACIONES_DOC);
-  const [tramites, setTramites] = useState(INITIAL_TRAMITES);
-  const [bitacora, setBitacora] = useState(INITIAL_BITACORA);
+  const [usuarioActual, setUsuarioActual] = useState(null);
+  const [rolActivo, setRolActivo] = useState('Área de Infraestructura / Entidad');
+  const [partidas, setPartidas] = usePersistentState('obra-traza-partidas', INITIAL_PARTIDAS);
+  const [validacionesDoc, setValidacionesDoc] = usePersistentState('obra-traza-validaciones-doc', INITIAL_VALIDACIONES_DOC);
+  const [tramites, setTramites] = usePersistentState('obra-traza-tramites', INITIAL_TRAMITES);
+  const [bitacora, setBitacora] = usePersistentState('obra-traza-bitacora', INITIAL_BITACORA);
 
   // Estados Módulo 2 (Campo)
   const [selectedPartida, setSelectedPartida] = useState('03.02');
@@ -405,6 +425,17 @@ export default function App() {
     { id: 'tramites', label: 'Trámites', sub: 'Plazos Legales', icon: FileClock }
   ];
 
+  if (!usuarioActual) {
+    return (
+      <LoginScreen
+        onLogin={(usuario) => {
+          setUsuarioActual(usuario);
+          setRolActivo(usuario.etiquetaRol);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800 font-sans">
       {/* =====================================================================
@@ -469,12 +500,22 @@ export default function App() {
                   aria-label="Seleccionar rol de usuario"
                   className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
                 >
-                  <option value="Área de Infraestructura (Entidad)">Área de Infraestructura</option>
-                  <option value="Ing. Carlos Mendoza (Supervisor)">Supervisor de Obra</option>
-                  <option value="Ing. María Torres (Residente)">Residente de Obra</option>
-                  <option value="Abg. Luis Rojas (Gestión Contractual)">Gestión Contractual</option>
+                  <option value="Área de Infraestructura / Entidad">Área de Infraestructura</option>
+                  <option value="Supervisor de Obra">Supervisor de Obra</option>
+                  <option value="Residente de Obra">Residente de Obra</option>
+                  <option value="Gestión Contractual">Gestión Contractual</option>
                 </select>
               </div>
+
+              <button
+                onClick={() => setUsuarioActual(null)}
+                aria-label={`Cerrar sesión de ${usuarioActual.nombre}`}
+                title="Cerrar sesión"
+                className="flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold px-3 py-2 rounded-lg transition cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Salir</span>
+              </button>
 
               <button
                 onClick={handleExportarReporte}
