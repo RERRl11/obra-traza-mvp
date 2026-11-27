@@ -222,17 +222,6 @@ export default function ProjectWorkspace({
                 className="sr-only"
               />
             </label>
-            <div className="mt-3 flex flex-wrap gap-4 text-xs font-semibold">
-              <a className="text-blue-800 underline hover:text-blue-950" href="/ejemplos/expediente-ejemplo-01.csv" download>
-                Descargar ejemplo de expediente 1
-              </a>
-              <a className="text-blue-800 underline hover:text-blue-950" href="/ejemplos/expediente-ejemplo-02.csv" download>
-                Descargar ejemplo de expediente 2
-              </a>
-              <a className="text-amber-800 underline hover:text-amber-950" href="/ejemplos/expediente-ejemplo-inconsistencias.csv" download>
-                Descargar ejemplo con inconsistencias
-              </a>
-            </div>
             {csvFeedback && (
               <p className={`mt-3 text-sm ${csvFeedback.error ? 'text-red-700' : 'text-emerald-700'}`} role={csvFeedback.error ? 'alert' : 'status'}>
                 {csvFeedback.text}

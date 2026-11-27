@@ -32,6 +32,7 @@ import { parsePartidasCSV } from './partidasCsv';
 import { crearValidacionesDocumentales } from './documentConsistency';
 import { calcularAvanceFisico, partidaTieneMetradoInconsistente } from './physicalProgress.js';
 import { prepareImageEvidence } from './imageEvidence.js';
+import { DEMO_WORKFLOWS } from './demoContracts.js';
 import {
   addBusinessDays,
   getTramiteDaysRemaining,
@@ -312,6 +313,100 @@ const CSV_CONTRACT_DEFAULTS = {
   valorizaciones: []
 };
 
+const DEMO_EXPEDIENTES = [
+  {
+    cui: '2654330',
+    nombre: 'Mejoramiento de laboratorios de ingeniería',
+    ubicacion: 'Trujillo La Libertad',
+    areaUsuaria: 'Facultad de Ingeniería',
+    expedienteTecnico: 1420000,
+    valorReferencial: 1300000,
+    procedimiento: 'Licitación Pública',
+    sistema: 'Suma Alzada',
+    modalidad: 'Por contrata',
+    fechaConvocatoria: '2026-04-15',
+    fechaBuenaPro: '2026-05-28',
+    fechaFirma: '2026-06-05',
+    numero: '015-2026-UNT/OAB',
+    contratista: 'Consorcio Norte Verde S.A.C.',
+    montoContrato: 1280000,
+    plazoDias: 240,
+    estado: 'Ejecución',
+    fechaInicio: '2026-06-15',
+    fechaTermino: '2027-02-10',
+    adelantos: 128000,
+    montoGarantia: 128000,
+    garantiaVence: '2027-03-10',
+    penalidades: 0,
+    avanceProgramado: 45,
+    presupuestoModificado: 1280000,
+    plazoCronogramaDias: 240,
+    presupuestoPartidas: 1280000,
+    permisoTerreno: 'Conforme',
+    detallePermisoTerreno: 'Permisos municipales y disponibilidad de terreno verificados',
+    especificacionesTecnicas: 'Conforme',
+    detalleEspecificacionesTecnicas: 'Especificaciones de bases y oferta coinciden'
+  },
+  {
+    cui: '2654331',
+    nombre: 'Rehabilitación de servicios higiénicos del pabellón central',
+    ubicacion: 'Trujillo La Libertad',
+    areaUsuaria: 'Oficina de Servicios Generales',
+    expedienteTecnico: 420000,
+    valorReferencial: 390000,
+    procedimiento: 'Adjudicación Simplificada',
+    sistema: 'Precios Unitarios',
+    modalidad: 'Por contrata',
+    fechaConvocatoria: '2026-10-12',
+    fechaBuenaPro: '2026-11-18',
+    numero: '016-2026-UNT/OAB',
+    contratista: 'Constructora Valle Moche E.I.R.L.',
+    montoContrato: 385000,
+    plazoDias: 120,
+    estado: 'Convocatoria',
+    presupuestoModificado: 385000,
+    plazoCronogramaDias: 120,
+    presupuestoPartidas: 385000,
+    permisoTerreno: 'Pendiente',
+    detallePermisoTerreno: 'Autorización de intervención pendiente',
+    especificacionesTecnicas: 'Pendiente',
+    detalleEspecificacionesTecnicas: 'Validación de ficha técnica pendiente'
+  },
+  {
+    cui: '2654332',
+    nombre: 'Mejoramiento del sistema de drenaje pluvial',
+    ubicacion: 'Trujillo La Libertad',
+    areaUsuaria: 'Gerencia de Infraestructura',
+    expedienteTecnico: 1040000,
+    valorReferencial: 980000,
+    procedimiento: 'Licitación Pública',
+    sistema: 'Precios Unitarios',
+    modalidad: 'Por contrata',
+    fechaConvocatoria: '2026-03-10',
+    fechaBuenaPro: '2026-04-20',
+    fechaFirma: '2026-05-04',
+    numero: '017-2026-UNT/OAB',
+    contratista: 'Consorcio Drenaje Seguro S.A.C.',
+    montoContrato: 980000,
+    plazoDias: 180,
+    estado: 'Ejecución',
+    fechaInicio: '2026-05-15',
+    fechaTermino: '2026-11-11',
+    adelantos: 98000,
+    montoGarantia: 98000,
+    garantiaVence: '2026-11-05',
+    penalidades: 0,
+    avanceProgramado: 70,
+    presupuestoModificado: 1050000,
+    plazoCronogramaDias: 240,
+    presupuestoPartidas: 1050000,
+    permisoTerreno: 'Inconsistencia',
+    detallePermisoTerreno: 'Falta autorización para interferencias de redes de agua',
+    especificacionesTecnicas: 'Inconsistencia',
+    detalleEspecificacionesTecnicas: 'La oferta indica acero fy=4200 y las bases exigen fy=5000'
+  }
+];
+
 function crearRegistroContrato(datosContrato, id, defaults = INITIAL_CONTRACT) {
   const montoContrato = Number(datosContrato.montoContrato) || 0;
   return {
@@ -339,15 +434,82 @@ function crearRegistroContrato(datosContrato, id, defaults = INITIAL_CONTRACT) {
     liquidacionFecha: datosContrato.liquidacionFecha || '',
     liquidacionMonto: Number(datosContrato.liquidacionMonto) || 0,
     observacionesCierre: datosContrato.observacionesCierre || '',
-    partidas: [],
+    partidas: Array.isArray(datosContrato.partidas) ? datosContrato.partidas : [],
     validacionesDoc: Array.isArray(datosContrato.validacionesDoc)
       ? datosContrato.validacionesDoc
       : crearValidacionesDocumentales({ ...datosContrato, montoContrato }),
-    tramites: [],
-    bitacora: [],
+    notificaciones: Array.isArray(datosContrato.notificaciones) ? datosContrato.notificaciones : [],
+    tramites: Array.isArray(datosContrato.tramites) ? datosContrato.tramites : [],
+    bitacora: Array.isArray(datosContrato.bitacora) ? datosContrato.bitacora : [],
     incidencias: Array.isArray(datosContrato.incidencias) ? datosContrato.incidencias : [],
-    valorizaciones: []
+    valorizaciones: Array.isArray(datosContrato.valorizaciones) ? datosContrato.valorizaciones : []
   };
+}
+
+function mergeDemoRecords(existing, demoRecords) {
+  const records = Array.isArray(existing) ? existing : [];
+  const ids = new Set(records.map(record => String(record.id)));
+  return (Array.isArray(demoRecords) ? demoRecords : []).reduce((merged, record) => {
+    const id = String(record.id);
+    if (!ids.has(id)) {
+      ids.add(id);
+      merged.push(record);
+    }
+    return merged;
+  }, [...records]);
+}
+
+function mergeDemoContract(contract, demoContract) {
+  return {
+    ...contract,
+    avanceQuincenal: contract.avanceQuincenal?.length
+      ? contract.avanceQuincenal
+      : demoContract.avanceQuincenal || [],
+    partidas: contract.partidas?.length ? contract.partidas : demoContract.partidas || [],
+    tramites: mergeDemoRecords(contract.tramites, demoContract.tramites),
+    bitacora: mergeDemoRecords(contract.bitacora, demoContract.bitacora),
+    incidencias: mergeDemoRecords(contract.incidencias, demoContract.incidencias),
+    notificaciones: mergeDemoRecords(contract.notificaciones, demoContract.notificaciones),
+    valorizaciones: mergeDemoRecords(contract.valorizaciones, demoContract.valorizaciones)
+  };
+}
+
+function crearExpedientesDemo() {
+  return DEMO_EXPEDIENTES.map(expediente =>
+    crearRegistroContrato({
+      ...expediente,
+      ...DEMO_WORKFLOWS[expediente.numero]
+    }, `DEMO-${expediente.numero}`, CSV_CONTRACT_DEFAULTS)
+  );
+}
+
+function crearContratosDemo() {
+  const principal = {
+    ...INITIAL_CONTRACT,
+    partidas: INITIAL_PARTIDAS,
+    validacionesDoc: INITIAL_VALIDACIONES_DOC,
+    tramites: INITIAL_TRAMITES,
+    bitacora: INITIAL_BITACORA
+  };
+  return [
+    mergeDemoContract(principal, DEMO_WORKFLOWS[INITIAL_CONTRACT.numero]),
+    ...crearExpedientesDemo()
+  ];
+}
+
+function asegurarContratosDemo(contracts) {
+  const current = Array.isArray(contracts) ? contracts : [];
+  const demoContracts = crearContratosDemo();
+  const byNumero = new Map(demoContracts.map(contract => [contract.numero.trim().toLowerCase(), contract]));
+  const existingNumbers = new Set(current.map(contract => contract.numero?.trim().toLowerCase()).filter(Boolean));
+  const withMissing = [
+    ...current,
+    ...demoContracts.filter(contract => !existingNumbers.has(contract.numero.toLowerCase()))
+  ];
+  return withMissing.map(contract => {
+    const demoContract = byNumero.get(contract.numero?.trim().toLowerCase());
+    return demoContract ? mergeDemoContract(contract, demoContract) : contract;
+  });
 }
 
 function readLegacyState(key, fallback) {
@@ -371,13 +533,13 @@ function localTimestamp(date = new Date()) {
 }
 
 function createInitialContracts() {
-  return [{
+  return asegurarContratosDemo([{
     ...INITIAL_CONTRACT,
     partidas: readLegacyState('obra-traza-partidas', INITIAL_PARTIDAS),
     validacionesDoc: readLegacyState('obra-traza-validaciones-doc', INITIAL_VALIDACIONES_DOC),
     tramites: readLegacyState('obra-traza-tramites', INITIAL_TRAMITES),
     bitacora: readLegacyState('obra-traza-bitacora', INITIAL_BITACORA)
-  }];
+  }]);
 }
 
 function evaluarEstadoPartida(p) {
@@ -429,6 +591,9 @@ export default function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [contratos, setContratos] = usePersistentState('obra-traza-contratos', createInitialContracts);
   const [entidad, setEntidad] = usePersistentState('obra-traza-entidad', INITIAL_ENTIDAD);
+  React.useEffect(() => {
+    setContratos(asegurarContratosDemo);
+  }, [setContratos]);
   const [selectedContractId, setSelectedContractId] = useState(INITIAL_CONTRACT.id);
   const contratoActual = contratos.find(contract => contract.id === selectedContractId) || contratos[0];
   const partidas = contratoActual?.partidas || [];
@@ -511,16 +676,25 @@ export default function App() {
       tramitesUrgentes
     };
   }, [partidas, tramites]);
+  const historialAvance = new Map(
+    (contratoActual?.avanceQuincenal || []).map(point => [point.periodo, point])
+  );
   const avanceChart = [
-    { periodo: 'Q1', programado: 15, real: 15 },
-    { periodo: 'Q2', programado: 35, real: 33 },
-    { periodo: 'Q3', programado: 58, real: 49 },
-    { periodo: 'Q4', programado: Number(contratoActual?.avanceProgramado || 0), real: resumen.avanceFisicoObra === null ? null : Number(resumen.avanceFisicoObra) }
+    ...['Q1', 'Q2', 'Q3'].map(periodo => ({
+      periodo,
+      programado: historialAvance.get(periodo)?.programado ?? null,
+      real: historialAvance.get(periodo)?.real ?? null
+    })),
+    {
+      periodo: 'Q4',
+      programado: contratoActual?.avanceProgramado === undefined ? null : Number(contratoActual.avanceProgramado),
+      real: resumen.avanceFisicoObra === null ? null : Number(resumen.avanceFisicoObra)
+    }
   ];
   const totalPartidasEstado = resumen.rojas + resumen.amarillas + resumen.verdes;
   const porcentajeEstado = (cantidad) => totalPartidasEstado ? (cantidad / totalPartidasEstado) * 100 : 0;
   const chartX = (index) => 100 + index * 105;
-  const chartMax = Math.max(100, Math.ceil(Math.max(...avanceChart.map(point => point.real)) / 25) * 25);
+  const chartMax = Math.max(100, Math.ceil(Math.max(...avanceChart.map(point => point.real ?? 0)) / 25) * 25);
   const chartTicks = Array.from({ length: 5 }, (_, index) => index * chartMax / 4);
   const chartY = (value) => 220 - (Math.max(0, value) / chartMax * 172);
 
@@ -1618,23 +1792,31 @@ export default function App() {
                   ))}
                   {avanceChart.map((point, index) => (
                     <g key={point.periodo}>
-                      <rect x={chartX(index) - 30} y={chartY(point.programado)} width="25" height={220 - chartY(point.programado)} rx="3" fill="#12377b">
-                        <title>{point.periodo}: programado {point.programado}%</title>
-                      </rect>
+                      {point.programado !== null && (
+                        <rect x={chartX(index) - 30} y={chartY(point.programado)} width="25" height={220 - chartY(point.programado)} rx="3" fill="#12377b">
+                          <title>{point.periodo}: programado {point.programado}%</title>
+                        </rect>
+                      )}
                       {point.real !== null && (
                         <rect x={chartX(index) + 5} y={chartY(point.real)} width="25" height={220 - chartY(point.real)} rx="3" fill="#e6ad09">
                           <title>{point.periodo}: real {point.real}%</title>
                         </rect>
                       )}
-                      <text x={chartX(index) - 17.5} y={chartY(point.programado) - 8} textAnchor="middle" fill="#12377b" fontSize="11">{point.programado}%</text>
+                      {point.programado !== null && (
+                        <text x={chartX(index) - 17.5} y={chartY(point.programado) - 8} textAnchor="middle" fill="#12377b" fontSize="11">{point.programado}%</text>
+                      )}
                       <text
                         x={chartX(index) + 17.5}
                         y={point.real === null ? 216 : chartY(point.real) - 8}
                         textAnchor="middle"
-                        fill={point.real === null ? '#b91c1c' : '#795900'}
+                        fill={point.real === null
+                          ? resumen.metradoInconsistente ? '#b91c1c' : '#64748b'
+                          : '#795900'}
                         fontSize="11"
                       >
-                        {point.real === null ? 'Revisar' : `${point.real}%`}
+                        {point.real === null
+                          ? resumen.metradoInconsistente ? 'Revisar' : 'Sin datos'
+                          : `${point.real}%`}
                       </text>
                       <text x={chartX(index)} y="244" textAnchor="middle" fill="#64748b" fontSize="11">{point.periodo}</text>
                     </g>

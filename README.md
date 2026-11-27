@@ -34,6 +34,7 @@ Como resultado, las entidades públicas enfrentan pronunciamientos tardíos, con
 El prototipo funcional (nivel TRL 3-4) está estructurado en cuatro módulos integrados:
 
 1. **Carga Contractual y Validación Inicial:**
+   - Cuatro expedientes de demostración están precargados y disponibles en el selector: tres en ejecución y uno en convocatoria. Incluyen trámites, incidencias y notificaciones de ejemplo; no es necesario descargar ejemplos CSV.
    - Importación de partidas presupuestales, metrados, plazos y subcontratistas desde archivos CSV.
    - Lista de verificación de consistencia documental entre contrato, cronograma, bases y expediente técnico.
 2. **Control de Ejecución y Calidad en Campo:**
