@@ -15,7 +15,6 @@ import {
   DollarSign,
   Camera,
   FileWarning,
-  UserCheck,
   FileText,
   Layers,
   Scale,
@@ -230,7 +229,6 @@ export default function App() {
   const [notice, setNotice] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [usuarioActual, setUsuarioActual] = useState(null);
-  const [rolActivo, setRolActivo] = useState('Área de Infraestructura / Entidad');
   const [partidas, setPartidas] = usePersistentState('obra-traza-partidas', INITIAL_PARTIDAS);
   const [validacionesDoc, setValidacionesDoc] = usePersistentState('obra-traza-validaciones-doc', INITIAL_VALIDACIONES_DOC);
   const [tramites, setTramites] = usePersistentState('obra-traza-tramites', INITIAL_TRAMITES);
@@ -320,7 +318,7 @@ export default function App() {
     const nuevaEntrada = {
       id: Date.now(),
       fecha: '2026-11-24 23:40',
-      usuario: rolActivo,
+      usuario: usuarioActual.etiquetaRol,
       partida: selectedPartida,
       accion: `${incidenciaTipo !== 'Ninguna' ? `[${incidenciaTipo}] ` : ''}Avance +${deltaAvance}, Gasto +S/${deltaGasto}. ${comentarioCampo}`,
       evidencia: evidenciaNombre || 'registro_campo_evidencia.jpg'
@@ -345,7 +343,7 @@ export default function App() {
       fechaIngreso: '2026-11-24',
       fechaLimite: '2026-11-29',
       diasRestantes: dias,
-      responsable: rolActivo,
+      responsable: usuarioActual.etiquetaRol,
       docsPendientes: 'En revisión inicial',
       estado: dias <= 3 ? 'Crítico' : 'Preventivo'
     };
@@ -354,7 +352,7 @@ export default function App() {
       {
         id: Date.now(),
         fecha: '2026-11-24 23:40',
-        usuario: rolActivo,
+        usuario: usuarioActual.etiquetaRol,
         partida: nuevo.id,
         accion: `Nuevo trámite contractual registrado: ${nuevo.tipo} - ${nuevo.asunto}`,
         evidencia: 'expediente_tramite.pdf'
@@ -419,18 +417,25 @@ export default function App() {
   };
 
   const navItems = [
-    { id: 'dashboard', label: 'Panel General', sub: 'Alertas y avance', icon: LayoutDashboard },
-    { id: 'contrato', label: 'Contrato', sub: 'Carga y Validación', icon: FileSpreadsheet },
-    { id: 'campo', label: 'Ejecución en Obra', sub: 'Avance y Calidad', icon: HardHat },
-    { id: 'tramites', label: 'Trámites', sub: 'Plazos Legales', icon: FileClock }
+    { id: 'dashboard', label: 'Panel General', sub: 'Alertas y avance', icon: LayoutDashboard, roles: ['ENTIDAD', 'SUPERVISOR', 'RESIDENTE', 'CONTRACTUAL'] },
+    { id: 'contrato', label: 'Contrato', sub: 'Carga y Validación', icon: FileSpreadsheet, roles: ['ENTIDAD', 'CONTRACTUAL'] },
+    { id: 'campo', label: 'Ejecución en Obra', sub: 'Avance y Calidad', icon: HardHat, roles: ['ENTIDAD', 'SUPERVISOR', 'RESIDENTE'] },
+    { id: 'tramites', label: 'Trámites', sub: 'Plazos Legales', icon: FileClock, roles: ['ENTIDAD', 'SUPERVISOR', 'RESIDENTE', 'CONTRACTUAL'] }
   ];
+  const visibleNavItems = usuarioActual
+    ? navItems.filter(item => item.roles.includes(usuarioActual.rol))
+    : [];
+  const canAccessTab = (tab) => visibleNavItems.some(item => item.id === tab);
+  const handleTabChange = (tab) => {
+    if (canAccessTab(tab)) setActiveTab(tab);
+  };
 
   if (!usuarioActual) {
     return (
       <LoginScreen
         onLogin={(usuario) => {
           setUsuarioActual(usuario);
-          setRolActivo(usuario.etiquetaRol);
+          setActiveTab('dashboard');
         }}
       />
     );
@@ -448,7 +453,7 @@ export default function App() {
             {/* Marca / Logo */}
             <button
               aria-label="OBRA TRAZA, ir al panel general"
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => handleTabChange('dashboard')}
               className="flex items-center gap-3 cursor-pointer shrink-0 text-left"
             >
               <div className="w-10 h-10 rounded-xl bg-blue-900 flex items-center justify-center text-white shadow-sm">
@@ -467,48 +472,18 @@ export default function App() {
               </div>
             </button>
 
-            {/* Navegación Central (Desktop) */}
-            <nav aria-label="Navegación principal" className="hidden xl:flex items-center space-x-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    aria-current={isActive ? 'page' : undefined}
-                    onClick={() => setActiveTab(item.id)}
-                    className={`flex items-center gap-2.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all ${
-                      isActive
-                        ? 'bg-blue-900 text-white shadow-sm'
-                        : 'text-slate-600 hover:bg-blue-50 hover:text-blue-900'
-                    }`}
-                  >
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-blue-200' : 'text-blue-700'}`} />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
-
-            {/* Controles Derechos: Selector de Rol y Exportación */}
+            {/* Perfil autenticado y controles */}
             <div className="flex flex-wrap items-center gap-2.5">
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
-                <UserCheck className="w-4 h-4 text-blue-700 shrink-0" />
-                <select
-                  value={rolActivo}
-                  onChange={(e) => setRolActivo(e.target.value)}
-                  aria-label="Seleccionar rol de usuario"
-                  className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
-                >
-                  <option value="Área de Infraestructura / Entidad">Área de Infraestructura</option>
-                  <option value="Supervisor de Obra">Supervisor de Obra</option>
-                  <option value="Residente de Obra">Residente de Obra</option>
-                  <option value="Gestión Contractual">Gestión Contractual</option>
-                </select>
+              <div className="min-w-0 text-right">
+                <p className="text-xs font-semibold text-slate-800 truncate">{usuarioActual.nombre}</p>
+                <p className="text-[11px] text-slate-500 truncate">{usuarioActual.etiquetaRol}</p>
               </div>
 
               <button
-                onClick={() => setUsuarioActual(null)}
+                onClick={() => {
+                  setUsuarioActual(null);
+                  setActiveTab('dashboard');
+                }}
                 aria-label={`Cerrar sesión de ${usuarioActual.nombre}`}
                 title="Cerrar sesión"
                 className="flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold px-3 py-2 rounded-lg transition cursor-pointer"
@@ -517,27 +492,28 @@ export default function App() {
                 <span className="hidden md:inline">Salir</span>
               </button>
 
-              <button
-                onClick={handleExportarReporte}
-                className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-sm transition cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">Exportar Auditoría</span>
-                <span className="md:hidden">CSV</span>
-              </button>
+              {usuarioActual.permisos.includes('EXPORTAR_CSV') && (
+                <button
+                  onClick={handleExportarReporte}
+                  className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-sm transition cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Exportar Auditoría</span>
+                  <span className="md:hidden">CSV</span>
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Navegación Secundaria Responsive (Móvil / Tablet) */}
-          <div className="flex xl:hidden overflow-x-auto gap-1.5 py-2 border-t border-slate-100">
-            {navItems.map((item) => {
+          <nav aria-label="Navegación principal" className="flex overflow-x-auto gap-1.5 py-2 border-t border-slate-100">
+            {visibleNavItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
-                    aria-current={isActive ? 'page' : undefined}
-                  onClick={() => setActiveTab(item.id)}
+                  aria-current={isActive ? 'page' : undefined}
+                  onClick={() => handleTabChange(item.id)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition ${
                     isActive
                       ? 'bg-blue-900 text-white'
@@ -549,7 +525,7 @@ export default function App() {
                 </button>
               );
             })}
-          </div>
+          </nav>
         </div>
 
         {/* Sub-barra de Contexto del Proyecto Simulado */}
@@ -579,7 +555,7 @@ export default function App() {
         <section className="page-heading">
           <div>
             <p className="institution-label">Universidad Nacional de Trujillo</p>
-            <h1>{navItems.find(item => item.id === activeTab)?.label}</h1>
+            <h1>{visibleNavItems.find(item => item.id === activeTab)?.label}</h1>
             <p className="page-description">{{ dashboard: 'Una visión clara del avance, los recursos y las prioridades de tu obra.', contrato: 'Centraliza las partidas y verifica la documentación del contrato.', campo: 'Registra el trabajo del día y mantén la trazabilidad de cada partida.', tramites: 'Organiza las solicitudes y da seguimiento a los plazos de atención.' }[activeTab]}</p>
           </div>
           <div className="project-tag"><Building2 size={18} aria-hidden="true" /><span>Infraestructura educativa<strong>Contrato 014-2026-UNT/OAB</strong></span></div>
@@ -684,12 +660,14 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setActiveTab('campo')}
-                  className="bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shrink-0 flex items-center gap-1.5 transition cursor-pointer"
-                >
-                  Gestionar en Campo
-                </button>
+                {canAccessTab('campo') && (
+                  <button
+                    onClick={() => handleTabChange('campo')}
+                    className="bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shrink-0 flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    Gestionar en Campo
+                  </button>
+                )}
               </div>
             )}
 
@@ -1192,26 +1170,13 @@ export default function App() {
                 Explora los módulos
               </h4>
               <ul className="space-y-2 text-xs text-blue-100">
-                <li>
-                  <button onClick={() => setActiveTab('contrato')} className="hover:text-white transition cursor-pointer">
-                    • Carga Contractual y Validación Documental
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActiveTab('campo')} className="hover:text-white transition cursor-pointer">
-                    • Control de Ejecución y Calidad en Campo
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActiveTab('tramites')} className="hover:text-white transition cursor-pointer">
-                    • Seguimiento de Plazos y Trámites Contractuales
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActiveTab('dashboard')} className="hover:text-white transition cursor-pointer">
-                    • Tablero de Alertas Tempranas y Curva S
-                  </button>
-                </li>
+                {visibleNavItems.map(item => (
+                  <li key={item.id}>
+                    <button onClick={() => handleTabChange(item.id)} className="hover:text-white transition cursor-pointer">
+                      • {item.label}
+                    </button>
+                  </li>
+                ))}
               </ul>
             </div>
 
