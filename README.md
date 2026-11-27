@@ -47,9 +47,16 @@ El prototipo funcional (nivel TRL 3-4) está estructurado en cuatro módulos int
    - Visualización de avance acumulado programado vs. real en barras agrupadas por quincena.
    - Bitácora cronológica de auditoría con registro de usuario, fecha, referencia y evidencia, con exportación en PDF de un informe de auditoría: resumen ejecutivo, criterios, hallazgos, recomendaciones, detalle de partidas, verificaciones documentales, trámites y referencias de evidencia.
 
+## 4. Flujos operativos por rol
+
+- **Trámites:** Residente registra la solicitud. Gestión Contractual registra su recepción; el Supervisor inicia la revisión y registra su opinión; Entidad evalúa, aprueba o deniega y notifica el resultado. Cada cambio queda en el historial y la bitácora. Los plazos se calculan en días hábiles de lunes a viernes; no se consideran feriados.
+- **Ejecución e incidencias:** Residente registra avances e incidencias de campo y puede adjuntar fotos. Supervisión revisa y deja el visto bueno; Entidad consulta la ejecución y las incidencias, y recibe alertas de las críticas. Un reporte sin metrados ni gasto no altera los indicadores de avance.
+- **Recepción y liquidación:** Solo Entidad puede acceder al módulo y registrar el cierre. La liquidación requiere que la recepción esté registrada.
+- Los datos y las notificaciones se guardan en el almacenamiento local del navegador; no se sincronizan entre dispositivos.
+
 ---
 
-## 4. Marco Normativo de Referencia
+## 5. Marco Normativo de Referencia
 
 - **Ley N° 32069**, Ley General de Contrataciones Públicas, y su Reglamento aprobado mediante **Decreto Supremo N° 009-2025-EF**.
 - **Ley N° 27785**, Ley Orgánica del Sistema Nacional de Control y de la Contraloría General de la República.
@@ -57,7 +64,7 @@ El prototipo funcional (nivel TRL 3-4) está estructurado en cuatro módulos int
 
 ---
 
-## 5. Tecnologías Utilizadas
+## 6. Tecnologías Utilizadas
 
 - **Frontend:** React 18, Vite 6
 - **Estilos:** Tailwind CSS 3
@@ -66,7 +73,7 @@ El prototipo funcional (nivel TRL 3-4) está estructurado en cuatro módulos int
 
 ---
 
-## 6. Estructura del Proyecto
+## 7. Estructura del Proyecto
 
 ```text
 obra-traza-mvp/

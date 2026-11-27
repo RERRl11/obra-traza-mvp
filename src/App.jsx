@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Download,
   Upload,
-  Plus,
   ShieldCheck,
   Building2,
   Calendar,
@@ -27,9 +26,19 @@ import {
 import LoginScreen from './components/LoginScreen';
 import EntityDashboard from './components/EntityDashboard';
 import ProjectWorkspace from './components/ProjectWorkspace';
+import IncidentList from './components/IncidentList';
+import TramiteWorkflow from './components/TramiteWorkflow';
 import { parsePartidasCSV } from './partidasCsv';
 import { crearValidacionesDocumentales } from './documentConsistency';
 import { calcularAvanceFisico, partidaTieneMetradoInconsistente } from './physicalProgress.js';
+import { prepareImageEvidence } from './imageEvidence.js';
+import {
+  addBusinessDays,
+  getTramiteDaysRemaining,
+  getTramiteStageIndex,
+  isTramiteResolved,
+  TRAMITE_STAGES
+} from './workflow.js';
 
 function usePersistentState(key, initialValue) {
   const [state, setState] = React.useState(() => {
@@ -251,6 +260,7 @@ const INITIAL_CONTRACT = {
   liquidacionMonto: 0,
   observacionesCierre: '',
   notificaciones: [],
+  incidencias: [],
   valorizaciones: [
     { id: 1, fecha: '2026-08-31', monto: 112500, acumulado: 25 },
     { id: 2, fecha: '2026-09-30', monto: 98500, acumulado: 46.8 },
@@ -298,6 +308,7 @@ const CSV_CONTRACT_DEFAULTS = {
   liquidacionMonto: 0,
   observacionesCierre: '',
   notificaciones: [],
+  incidencias: [],
   valorizaciones: []
 };
 
@@ -334,6 +345,7 @@ function crearRegistroContrato(datosContrato, id, defaults = INITIAL_CONTRACT) {
       : crearValidacionesDocumentales({ ...datosContrato, montoContrato }),
     tramites: [],
     bitacora: [],
+    incidencias: Array.isArray(datosContrato.incidencias) ? datosContrato.incidencias : [],
     valorizaciones: []
   };
 }
@@ -345,6 +357,17 @@ function readLegacyState(key, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function dateInputValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function localTimestamp(date = new Date()) {
+  return date.toLocaleString('sv-SE', { hour12: false }).slice(0, 16);
 }
 
 function createInitialContracts() {
@@ -412,6 +435,7 @@ export default function App() {
   const validacionesDoc = contratoActual?.validacionesDoc || [];
   const tramites = contratoActual?.tramites || [];
   const bitacora = contratoActual?.bitacora || [];
+  const incidencias = contratoActual?.incidencias || [];
   const updateCurrentContract = (update) => {
     if (!contratoActual) return;
     setContratos(current =>
@@ -432,6 +456,7 @@ export default function App() {
   const setTramites = update => updateContractList('tramites', update);
   const setBitacora = update => updateContractList('bitacora', update);
   const setNotificaciones = update => updateContractList('notificaciones', update);
+  const setIncidencias = update => updateContractList('incidencias', update);
 
   // Estados Módulo 2 (Campo)
   const [selectedPartida, setSelectedPartida] = useState('03.02');
@@ -439,13 +464,11 @@ export default function App() {
   const [gastoInput, setGastoInput] = useState('');
   const [incidenciaTipo, setIncidenciaTipo] = useState('Ninguna');
   const [comentarioCampo, setComentarioCampo] = useState('');
-  const [evidenciaNombre, setEvidenciaNombre] = useState('');
+  const [evidenciaFoto, setEvidenciaFoto] = useState(null);
+  const [evidenciaCargando, setEvidenciaCargando] = useState(false);
   const [mostrarNotificaciones, setMostrarNotificaciones] = useState(false);
-
-  // Estados Módulo 3 (Trámites)
-  const [nuevoTramiteTipo, setNuevoTramiteTipo] = useState('Ampliación de Plazo');
-  const [nuevoTramiteAsunto, setNuevoTramiteAsunto] = useState('');
-  const [nuevoTramiteDias, setNuevoTramiteDias] = useState(5);
+  const [selectedTramiteId, setSelectedTramiteId] = useState('');
+  const evidenciaNombre = evidenciaFoto?.nombre || '';
 
   const resumen = useMemo(() => {
     const avanceFisico = calcularAvanceFisico(partidas);
@@ -471,7 +494,9 @@ export default function App() {
       else verdes++;
     });
 
-    const tramitesUrgentes = tramites.filter(t => t.estado !== 'Atendido' && t.diasRestantes <= 3).length;
+    const tramitesUrgentes = tramites.filter(t =>
+      !isTramiteResolved(t) && (getTramiteDaysRemaining(t) ?? Number.POSITIVE_INFINITY) <= 3
+    ).length;
 
     return {
       totalPresupuesto,
@@ -501,7 +526,7 @@ export default function App() {
 
   const handleRegistrarCampo = (e) => {
     e.preventDefault();
-    if (!hasPermission('REGISTRAR_AVANCE') && !hasPermission('REPORTAR_INCIDENCIA')) {
+    if (!hasExplicitPermission('REGISTRAR_AVANCE') && !hasExplicitPermission('REPORTAR_INCIDENCIA')) {
       setNotice({ error: true, text: 'Tu perfil no cuenta con permisos para registrar avances o incidencias.' });
       return;
     }
@@ -523,71 +548,179 @@ export default function App() {
     const generaNoConformidad = incidenciaTipo === 'No Conformidad de Calidad';
     const generaNotificacionCritica = incidenciaTipo === 'Incidencia Crítica';
     const subsanaNoConformidad = incidenciaTipo === 'Subsanación Aprobada';
+    if (deltaAvance > 0 && (partida.noConformidad || generaNoConformidad) && !subsanaNoConformidad) {
+      setNotice({ error: true, text: 'La partida tiene una no conformidad pendiente. No puedes registrar avance hasta que Supervisión apruebe la subsanación.' });
+      return;
+    }
+    const reportaIncidencia = hasExplicitPermission('REPORTAR_INCIDENCIA') &&
+      usuarioActual.rol === 'RESIDENTE' && incidenciaTipo !== 'Ninguna';
     if (generaNotificacionCritica && usuarioActual.rol !== 'RESIDENTE') {
       setNotice({ error: true, text: 'Solo el perfil Residente puede registrar incidencias críticas para Entidad.' });
       return;
     }
-    if (generaNotificacionCritica && !comentarioCampo.trim()) {
-      setNotice({ error: true, text: 'Describe la incidencia crítica para notificar a Entidad.' });
+    if (reportaIncidencia && !comentarioCampo.trim()) {
+      setNotice({
+        error: true,
+        text: generaNotificacionCritica
+          ? 'Describe la incidencia crítica para notificar a Entidad.'
+          : 'Describe la incidencia antes de registrarla.'
+      });
       return;
     }
-    if (deltaAvance > 0 && !hasPermission('REGISTRAR_AVANCE')) {
+    if (deltaAvance > 0 && !hasExplicitPermission('REGISTRAR_AVANCE')) {
       setNotice({ error: true, text: 'Tu perfil puede validar calidad, pero no registrar avances físicos.' });
       return;
     }
-    if (subsanaNoConformidad && !hasPermission('LEVANTAR_BLOQUEO')) {
+    if (subsanaNoConformidad && !puedeLevantarBloqueo) {
       setNotice({ error: true, text: 'Solo Supervisión o Entidad puede aprobar la subsanación de una no conformidad.' });
       return;
     }
 
-    setPartidas(prev =>
-      prev.map(p => {
-        if (p.codigo !== selectedPartida) return p;
-        const nuevoEjecutado = Math.min(p.metradoContratado, p.metradoEjecutado + deltaAvance);
-        const nuevoGasto = p.gastoEjecutado + deltaGasto;
-        const nuevaNoConf = subsanaNoConformidad ? false : (generaNoConformidad ? true : p.noConformidad);
-        return {
-          ...p,
-          metradoEjecutado: nuevoEjecutado,
-          gastoEjecutado: nuevoGasto,
-          jornadas: p.jornadas + 1,
-          noConformidad: nuevaNoConf,
-          observacion: comentarioCampo || p.observacion
-        };
-      })
-    );
+    const actualizaPartida = deltaAvance > 0 || deltaGasto > 0 ||
+      generaNoConformidad || subsanaNoConformidad ||
+      (!reportaIncidencia && Boolean(comentarioCampo.trim()));
+    if (actualizaPartida) {
+      setPartidas(prev =>
+        prev.map(p => {
+          if (p.codigo !== selectedPartida) return p;
+          const nuevoEjecutado = Math.min(p.metradoContratado, p.metradoEjecutado + deltaAvance);
+          const nuevoGasto = p.gastoEjecutado + deltaGasto;
+          const nuevaNoConf = subsanaNoConformidad ? false : (generaNoConformidad ? true : p.noConformidad);
+          return {
+            ...p,
+            metradoEjecutado: nuevoEjecutado,
+            gastoEjecutado: nuevoGasto,
+            jornadas: p.jornadas + 1,
+            noConformidad: nuevaNoConf,
+            observacion: comentarioCampo || p.observacion
+          };
+        })
+      );
+    }
 
+    const fechaActual = new Date();
     const nuevaEntrada = {
       id: Date.now(),
-      fecha: '2026-11-24 23:40',
+      fecha: localTimestamp(fechaActual),
       usuario: usuarioActual.etiquetaRol,
       partida: selectedPartida,
-      accion: `${incidenciaTipo !== 'Ninguna' ? `[${incidenciaTipo}] ` : ''}Avance +${deltaAvance}, Gasto +S/${deltaGasto}. ${comentarioCampo}`,
-      evidencia: evidenciaNombre || 'registro_campo_evidencia.jpg'
+      accion: reportaIncidencia && !deltaAvance && !deltaGasto
+        ? `[${incidenciaTipo}] ${comentarioCampo.trim()}`
+        : `${incidenciaTipo !== 'Ninguna' ? `[${incidenciaTipo}] ` : ''}Avance +${deltaAvance}, Gasto +S/${deltaGasto}. ${comentarioCampo}`,
+      evidencia: evidenciaNombre || 'registro_campo_evidencia.jpg',
+      evidenciaDataUrl: reportaIncidencia ? '' : evidenciaFoto?.dataUrl || ''
     };
 
-    setBitacora([nuevaEntrada, ...bitacora]);
-    if (generaNotificacionCritica) {
-      setNotificaciones(current => [{
+    setBitacora(current => [nuevaEntrada, ...current]);
+    if (reportaIncidencia) {
+      setIncidencias(current => [{
         id: nuevaEntrada.id,
-        destinatario: 'ENTIDAD',
-        tipo: 'Incidencia crítica de calidad',
+        tipo: incidenciaTipo,
         partida: selectedPartida,
         detalle: comentarioCampo.trim(),
-        usuario: usuarioActual.nombre,
+        evidencia: evidenciaNombre.trim(),
         fecha: new Date().toISOString(),
-        leida: false
+        registradaPorId: usuarioActual.id,
+        registradaPor: usuarioActual.nombre,
+        evidenciaDataUrl: evidenciaFoto?.dataUrl || '',
+        estadoRevision: 'Pendiente de revisión',
+        revisadaPor: '',
+        fechaRevision: ''
       }, ...current]);
+    }
+    if (reportaIncidencia) {
+      const fechaNotificacion = fechaActual.toISOString();
+      const destinatarios = ['SUPERVISOR', ...(generaNotificacionCritica ? ['ENTIDAD'] : [])];
+      setNotificaciones(current => [
+        ...destinatarios.map(destinatario => ({
+          id: `${nuevaEntrada.id}-${destinatario}`,
+          destinatario,
+          kind: 'incidencia',
+          tipo: generaNotificacionCritica ? 'Incidencia crítica de calidad' : 'Nueva incidencia reportada',
+          incidentId: nuevaEntrada.id,
+          partida: selectedPartida,
+          detalle: comentarioCampo.trim(),
+          usuario: usuarioActual.nombre,
+          fecha: fechaNotificacion,
+          leida: false
+        })),
+        ...current
+      ]);
     }
     setAvanceInput('');
     setGastoInput('');
     setComentarioCampo('');
-    setEvidenciaNombre('');
-    setNotice({ text: 'Registro guardado. Los indicadores y la bitácora están actualizados.' });
+    setEvidenciaFoto(null);
+    setNotice({
+      text: reportaIncidencia
+        ? generaNotificacionCritica
+          ? 'Incidencia registrada. Supervisión fue notificada y Entidad recibió la alerta crítica.'
+          : 'Incidencia registrada y enviada a Supervisión para su revisión.'
+        : 'Registro guardado. Los indicadores y la bitácora están actualizados.'
+    });
+  };
+
+  const handleSeleccionarEvidencia = async (event) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    setEvidenciaFoto(null);
+    setEvidenciaCargando(true);
+    try {
+      setEvidenciaFoto(await prepareImageEvidence(file));
+      setNotice({ text: 'Foto comprimida y lista para adjuntar al registro.' });
+    } catch (error) {
+      setNotice({
+        error: true,
+        text: error instanceof Error ? error.message : 'No se pudo procesar la foto.'
+      });
+    } finally {
+      input.value = '';
+      setEvidenciaCargando(false);
+    }
+  };
+
+  const handleDarVistoBueno = (id) => {
+    if (usuarioActual.rol !== 'SUPERVISOR') {
+      setNotice({ error: true, text: 'Solo el perfil Supervisor puede dar el visto bueno a una incidencia.' });
+      return;
+    }
+    const incidencia = incidencias.find(item => item.id === id);
+    if (!incidencia || incidencia.estadoRevision !== 'Pendiente de revisión') {
+      setNotice({ error: true, text: 'La incidencia ya fue revisada o no está disponible.' });
+      return;
+    }
+
+    const fechaRevision = new Date().toISOString();
+    setIncidencias(current => current.map(item => item.id === id
+      ? { ...item, estadoRevision: 'Visto bueno', revisadaPor: usuarioActual.nombre, fechaRevision }
+      : item
+    ));
+    setBitacora(current => [{
+      id: Date.now(),
+      fecha: fechaRevision,
+      usuario: usuarioActual.nombre,
+      partida: incidencia.partida,
+      accion: `Visto bueno del Supervisor a la incidencia "${incidencia.tipo}".`,
+      evidencia: incidencia.evidencia || 'revisión de incidencia'
+    }, ...current]);
+    setNotificaciones(current => [{
+      id: `${id}-revisada-${Date.now()}`,
+      destinatario: 'RESIDENTE',
+      kind: 'incidencia',
+      tipo: 'Incidencia revisada por Supervisión',
+      incidentId: id,
+      partida: incidencia.partida,
+      detalle: `La incidencia "${incidencia.tipo}" recibió visto bueno.`,
+      usuario: usuarioActual.nombre,
+      fecha: fechaRevision,
+      leida: false
+    }, ...current]);
+    setNotice({ text: 'Visto bueno registrado. El Residente verá la incidencia como revisada.' });
   };
 
   const handleAprobarSubsanacion = (codigo) => {
-    if (!hasPermission('LEVANTAR_BLOQUEO')) {
+    if (!puedeLevantarBloqueo) {
       setNotice({ error: true, text: 'Tu perfil no cuenta con permisos para levantar bloqueos de calidad.' });
       return;
     }
@@ -601,7 +734,7 @@ export default function App() {
     ));
     setBitacora(current => [{
       id: Date.now(),
-      fecha: new Date().toLocaleString('sv-SE').slice(0, 16),
+      fecha: localTimestamp(),
       usuario: usuarioActual.etiquetaRol,
       partida: codigo,
       accion: 'Subsanación de calidad aprobada; se levantó el bloqueo.',
@@ -610,70 +743,193 @@ export default function App() {
     setNotice({ text: `Bloqueo de la partida ${codigo} levantado.` });
   };
 
-  const handleAgregarTramite = (e) => {
-    e.preventDefault();
-    if (!hasPermission('SOLICITAR_TRAMITE') && !hasPermission('VER_TODO')) {
-      setNotice({ error: true, text: 'Tu perfil no cuenta con permisos para solicitar trámites.' });
-      return;
-    }
-    if (!nuevoTramiteAsunto.trim()) return;
-    const dias = parseInt(nuevoTramiteDias, 10) || 5;
-    const nuevo = {
-      id: `TR-2026-0${tramites.length + 1}`,
-      tipo: nuevoTramiteTipo,
-      asunto: nuevoTramiteAsunto,
-      fechaIngreso: '2026-11-24',
-      fechaLimite: '2026-11-29',
-      diasRestantes: dias,
-      responsable: usuarioActual.etiquetaRol,
-      docsPendientes: 'En revisión inicial',
-      estado: dias <= 3 ? 'Crítico' : 'Preventivo'
+  const notificarTramite = (tramite, destinatarios, tipo, detalle, fecha = new Date().toISOString()) => {
+    const avisos = destinatarios
+      .filter(destinatario => destinatario && destinatario !== usuarioActual.rol)
+      .map(destinatario => ({
+        id: `${tramite.id}-${destinatario}-${Date.now()}`,
+        destinatario,
+        kind: 'tramite',
+        tipo,
+        tramiteId: tramite.id,
+        solicitante: tramite.solicitante,
+        diasSolicitados: tramite.diasSolicitados,
+        estado: tramite.etapa,
+        detalle,
+        usuario: usuarioActual.nombre,
+        fecha,
+        leida: false
+      }));
+    if (avisos.length) setNotificaciones(current => [...avisos, ...current]);
+  };
+
+  const registrarEtapaTramite = (tramite, stageIndex, patch = {}, detalle = '') => {
+    const fecha = new Date().toISOString();
+    const etapa = TRAMITE_STAGES[stageIndex];
+    const evento = { etapa, fecha, usuario: usuarioActual.nombre, detalle };
+    const actualizado = {
+      ...tramite,
+      ...patch,
+      etapa,
+      historial: [...(tramite.historial || []), evento]
     };
-    setTramites([nuevo, ...tramites]);
-    setBitacora([
-      {
+    setTramites(current => current.map(item => item.id === tramite.id ? actualizado : item));
+    setBitacora(current => [{
+      id: Date.now(),
+      fecha: localTimestamp(new Date(fecha)),
+      usuario: usuarioActual.etiquetaRol,
+      partida: tramite.id,
+      accion: `${etapa}${detalle ? `: ${detalle}` : ''}`,
+      evidencia: 'seguimiento_de_tramite'
+    }, ...current]);
+    return actualizado;
+  };
+
+  const handleAgregarTramite = (tipo, asunto, diasSolicitados) => {
+    if (!puedeSolicitarTramite) {
+      setNotice({ error: true, text: 'Tu perfil no cuenta con permisos para solicitar trámites.' });
+      return false;
+    }
+    const dias = Number(diasSolicitados);
+    if (!asunto.trim() || !Number.isInteger(dias) || dias < 1 || dias > 30) {
+      setNotice({ error: true, text: 'Ingresa un asunto y un plazo entre 1 y 30 días hábiles.' });
+      return false;
+    }
+    const today = dateInputValue();
+    const year = new Date().getFullYear();
+    const nextNumber = tramites.reduce((maximum, item) => {
+      const match = item.id?.match(new RegExp(`^TR-${year}-(\\d+)$`));
+      return match ? Math.max(maximum, Number(match[1])) : maximum;
+    }, 0) + 1;
+    const id = `TR-${year}-${String(nextNumber).padStart(2, '0')}`;
+    const nuevo = {
+      id,
+      tipo,
+      asunto: asunto.trim(),
+      fechaIngreso: today,
+      fechaLimite: addBusinessDays(today, dias),
+      diasSolicitados: dias,
+      diasRestantes: dias,
+      solicitante: contratoActual?.contratista || usuarioActual.etiquetaRol,
+      solicitanteUsuario: usuarioActual.nombre,
+      solicitanteRol: usuarioActual.rol,
+      responsable: 'Gestión Contractual',
+      docsPendientes: 'Pendiente de recepción',
+      opinion: '',
+      decision: '',
+      estado: 'En trámite',
+      etapa: TRAMITE_STAGES[0],
+      historial: [{
+        etapa: TRAMITE_STAGES[0],
+        fecha: new Date().toISOString(),
+        usuario: usuarioActual.nombre,
+        detalle: 'Solicitud registrada; se notificó a Entidad, Supervisión y Gestión Contractual.'
+      }]
+    };
+    setTramites(current => [nuevo, ...current]);
+    setSelectedTramiteId(id);
+    setBitacora(current => [{
         id: Date.now(),
-        fecha: '2026-11-24 23:40',
+        fecha: localTimestamp(),
         usuario: usuarioActual.etiquetaRol,
         partida: nuevo.id,
         accion: `Nuevo trámite contractual registrado: ${nuevo.tipo} - ${nuevo.asunto}`,
-        evidencia: 'expediente_tramite.pdf'
-      },
-      ...bitacora
-    ]);
-    setNuevoTramiteAsunto('');
+        evidencia: 'registro_de_solicitud'
+      }, ...current]);
+    notificarTramite(
+      nuevo,
+      ['ENTIDAD', 'SUPERVISOR', 'CONTRACTUAL'],
+      `Nueva solicitud de ${tipo.toLowerCase()}`,
+      `Solicitud originada por ${nuevo.asunto}. Pendiente de recepción por Gestión Contractual.`
+    );
     setNotice({ text: `Trámite ${nuevo.id} registrado. Ya puedes consultar su seguimiento.` });
+    return true;
   };
 
-  const handleMarcarTramiteAtendido = (id) => {
-    if (!hasPermission('APROBAR_TRAMITE') && !hasPermission('CONTROL_PLAZOS')) {
-      setNotice({ error: true, text: 'Tu perfil no cuenta con permisos para cerrar trámites.' });
+  const obtenerTramiteActivo = (id, etapaEsperada) => {
+    const tramite = tramites.find(item => item.id === id);
+    if (!tramite || getTramiteStageIndex(tramite) !== etapaEsperada) {
+      setNotice({ error: true, text: 'El trámite cambió de etapa o ya no está disponible. Actualiza la vista.' });
+      return null;
+    }
+    return tramite;
+  };
+
+  const handleRegistrarRecepcionTramite = (id) => {
+    if (usuarioActual.rol !== 'CONTRACTUAL') {
+      setNotice({ error: true, text: 'Solo Gestión Contractual puede registrar la recepción de una solicitud.' });
       return;
     }
-    setTramites(current => current.map(item =>
-      item.id === id ? { ...item, estado: 'Atendido', diasRestantes: 0 } : item
-    ));
-    setBitacora(current => [{
-      id: Date.now(),
-      fecha: new Date().toLocaleString('sv-SE').slice(0, 16),
-      usuario: usuarioActual.etiquetaRol,
-      partida: id,
-      accion: 'Trámite marcado como atendido.',
-      evidencia: 'registro_de_atencion'
-    }, ...current]);
+    const tramite = obtenerTramiteActivo(id, 0);
+    if (!tramite) return;
+    const actualizado = registrarEtapaTramite(tramite, 1, {
+      responsable: 'Supervisor de Obra',
+      docsPendientes: 'Pendiente de inicio de revisión'
+    }, 'Recepción registrada por Gestión Contractual.');
+    notificarTramite(actualizado, ['SUPERVISOR'], 'Solicitud recibida para revisión', 'Gestión Contractual registró la recepción.');
+    setNotice({ text: `Recepción del trámite ${id} registrada.` });
+  };
+
+  const handleIniciarRevisionTramite = (id) => {
+    if (usuarioActual.rol !== 'SUPERVISOR') {
+      setNotice({ error: true, text: 'Solo el Supervisor puede iniciar la revisión técnica.' });
+      return;
+    }
+    const tramite = obtenerTramiteActivo(id, 1);
+    if (!tramite) return;
+    registrarEtapaTramite(tramite, 2, { responsable: 'Supervisor de Obra' }, 'El Supervisor inició la revisión del sustento.');
+    setNotice({ text: `Revisión del trámite ${id} iniciada.` });
   };
 
   const handleOpinarTramite = (id, opinion) => {
-    if (!hasPermission('OPINAR_TRAMITE')) return;
-    setTramites(current => current.map(item => item.id === id ? { ...item, opinion } : item));
-    setBitacora(current => [{
-      id: Date.now(),
-      fecha: new Date().toLocaleString('sv-SE').slice(0, 16),
-      usuario: usuarioActual.etiquetaRol,
-      partida: id,
-      accion: `Opinión de Supervisión registrada: ${opinion}.`,
-      evidencia: 'opinion_de_supervision'
-    }, ...current]);
+    if (usuarioActual.rol !== 'SUPERVISOR' || !['Conforme', 'Observado'].includes(opinion)) {
+      setNotice({ error: true, text: 'Solo el Supervisor puede registrar una opinión válida.' });
+      return;
+    }
+    const tramite = obtenerTramiteActivo(id, 2);
+    if (!tramite) return;
+    const actualizado = registrarEtapaTramite(tramite, 3, {
+      opinion,
+      responsable: 'Entidad',
+      docsPendientes: 'Pendiente de evaluación de Entidad'
+    }, `Opinión de Supervisión: ${opinion}.`);
+    notificarTramite(actualizado, ['ENTIDAD', tramite.solicitanteRol], 'Opinión del Supervisor registrada', `La opinión fue: ${opinion}.`);
+    setNotice({ text: `Opinión del Supervisor registrada para ${id}.` });
+  };
+
+  const handleIniciarEvaluacionTramite = (id) => {
+    if (usuarioActual.rol !== 'ENTIDAD') {
+      setNotice({ error: true, text: 'Solo Entidad puede iniciar la evaluación de la solicitud.' });
+      return;
+    }
+    const tramite = obtenerTramiteActivo(id, 3);
+    if (!tramite) return;
+    registrarEtapaTramite(tramite, 4, { responsable: 'Entidad' }, 'Entidad inició la evaluación de la solicitud.');
+    setNotice({ text: `Evaluación de Entidad iniciada para ${id}.` });
+  };
+
+  const handleResolverTramite = (id, decision) => {
+    if (usuarioActual.rol !== 'ENTIDAD' || !['Aprobada', 'Denegada'].includes(decision)) {
+      setNotice({ error: true, text: 'Solo Entidad puede emitir una decisión válida para el trámite.' });
+      return;
+    }
+    const tramite = obtenerTramiteActivo(id, 4);
+    if (!tramite) return;
+    const actualizado = registrarEtapaTramite(tramite, 5, {
+      decision,
+      estado: 'Atendido',
+      diasRestantes: 0,
+      responsable: 'Trámite resuelto',
+      docsPendientes: 'Ninguno',
+      fechaResolucion: new Date().toISOString()
+    }, `Decisión de Entidad: ${decision}. Notificación enviada a los participantes.`);
+    notificarTramite(
+      actualizado,
+      [tramite.solicitanteRol, 'CONTRACTUAL', 'SUPERVISOR'],
+      `Solicitud ${decision.toLowerCase()}`,
+      `Entidad resolvió la solicitud ${id}: ${decision}.`
+    );
+    setNotice({ text: `Trámite ${id} ${decision.toLowerCase()} y notificado.` });
   };
 
   const handleCargarCSVPartidas = async (event) => {
@@ -760,6 +1016,7 @@ export default function App() {
         partidas: existente.partidas || [],
         tramites: existente.tramites || [],
         bitacora: existente.bitacora || [],
+        incidencias: existente.incidencias || [],
         valorizaciones: existente.valorizaciones || []
       });
       idsImportados.push(existente.id);
@@ -780,6 +1037,7 @@ export default function App() {
     setSelectedContractId(id);
     const selected = contratos.find(contract => contract.id === id);
     setSelectedPartida(selected?.partidas?.[0]?.codigo || '');
+    setSelectedTramiteId('');
     setNotice(null);
   };
 
@@ -806,8 +1064,13 @@ export default function App() {
         }
     ));
     setSelectedContractId(notification.contractId);
-    setSelectedPartida(notification.partida);
-    setActiveTab('ejecucion');
+    if (notification.kind === 'tramite' || notification.tramiteId) {
+      setSelectedTramiteId(notification.tramiteId);
+      setActiveTab('tramites');
+    } else {
+      setSelectedPartida(notification.partida);
+      setActiveTab('ejecucion');
+    }
     setMostrarNotificaciones(false);
   };
 
@@ -817,18 +1080,23 @@ export default function App() {
     { id: 'contrato', label: 'Contrato', icon: FileSpreadsheet, permissions: ['VER_TODO', 'CONTROL_PLAZOS'] },
     { id: 'ejecucion', label: 'Ejecución', icon: HardHat, permissions: ['VER_TODO', 'REGISTRAR_AVANCE', 'VALIDAR_CALIDAD'] },
     { id: 'tramites', label: 'Trámites', icon: FileClock, permissions: ['VER_TODO', 'APROBAR_TRAMITE', 'OPINAR_TRAMITE', 'SOLICITAR_TRAMITE', 'CONTROL_PLAZOS'] },
-    { id: 'cierre', label: 'Recepción y liquidación', icon: CheckCircle2, permissions: ['VER_TODO', 'VALIDAR_CALIDAD', 'CONTROL_PLAZOS'] },
+    { id: 'cierre', label: 'Recepción y liquidación', icon: CheckCircle2, permissions: ['VER_TODO'] },
     { id: 'auditoria', label: 'Auditoría', icon: ShieldCheck, permissions: ['VER_TODO', 'VER_AUDITORIA'] }
   ];
   const hasPermission = (permission) => {
     const permissions = usuarioActual?.permisos || [];
     return permissions.includes('VER_TODO') || permissions.includes(permission);
   };
-  const puedeCambiarContrato = hasPermission('CONTROL_PLAZOS') || hasPermission('VER_TODO');
+  const hasExplicitPermission = (permission) => (usuarioActual?.permisos || []).includes(permission);
+  const puedeCambiarContrato = hasExplicitPermission('CONTROL_PLAZOS') ||
+    hasExplicitPermission('VALIDAR_CALIDAD') || usuarioActual?.rol === 'ENTIDAD';
   const puedeEditarProyecto = hasPermission('VER_TODO');
-  const puedeValidarCalidad = hasPermission('VALIDAR_CALIDAD') || hasPermission('VER_TODO');
-  const puedeLiquidar = hasPermission('CONTROL_PLAZOS') || hasPermission('VER_TODO');
-  const puedeSolicitarTramite = hasPermission('SOLICITAR_TRAMITE') || hasPermission('VER_TODO');
+  const puedeValidarCalidad = hasExplicitPermission('VALIDAR_CALIDAD') || usuarioActual?.rol === 'ENTIDAD';
+  const puedeLevantarBloqueo = hasExplicitPermission('LEVANTAR_BLOQUEO');
+  const puedeLiquidar = usuarioActual?.rol === 'ENTIDAD';
+  const puedeSolicitarTramite = hasExplicitPermission('SOLICITAR_TRAMITE');
+  const puedeRegistrarCampo = hasExplicitPermission('REGISTRAR_AVANCE') || hasExplicitPermission('REPORTAR_INCIDENCIA');
+  const puedeAdministrarDatosEjecucion = usuarioActual?.rol !== 'ENTIDAD';
   const visibleNavItems = usuarioActual
     ? navItems.filter(item => item.permissions.some(hasPermission))
     : [];
@@ -842,11 +1110,13 @@ export default function App() {
       <LoginScreen
         onLogin={(usuario) => {
           setUsuarioActual(usuario);
+          setMostrarNotificaciones(false);
+          setSelectedTramiteId('');
           setIncidenciaTipo('Ninguna');
           setAvanceInput('');
           setGastoInput('');
           setComentarioCampo('');
-          setEvidenciaNombre('');
+          setEvidenciaFoto(null);
           const firstTabByRole = {
             ENTIDAD: 'entidad',
             SUPERVISOR: 'ejecucion',
@@ -938,6 +1208,8 @@ export default function App() {
             type="button"
             onClick={() => {
               setUsuarioActual(null);
+              setMostrarNotificaciones(false);
+              setSelectedTramiteId('');
               setActiveTab('entidad');
               setMobileSidebarOpen(false);
             }}
@@ -996,34 +1268,52 @@ export default function App() {
                     <span className="text-xs text-slate-500">{notificacionesNoLeidas} sin leer</span>
                   </div>
                   {notificaciones.length === 0 ? (
-                    <p className="p-3 text-sm text-slate-500">No hay incidencias críticas para este perfil.</p>
+                    <p className="p-3 text-sm text-slate-500">No hay notificaciones para este perfil.</p>
                   ) : (
                     <div className="space-y-2">
-                      {notificaciones.map(notification => (
-                        <button
-                          key={`${notification.contractId}-${notification.id}`}
-                          type="button"
-                          onClick={() => handleAbrirNotificacion(notification)}
-                          className={`w-full rounded-lg border p-3 text-left transition hover:bg-red-50 ${
-                            notification.leida ? 'border-slate-200 bg-white' : 'border-red-200 bg-red-50/60'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="text-xs font-bold text-red-800">{notification.tipo}</span>
-                            <span className="shrink-0 text-[10px] font-semibold text-slate-500">
-                              {notification.leida ? 'Leída' : 'Nueva'}
+                      {notificaciones.map(notification => {
+                        const esTramite = notification.kind === 'tramite' || Boolean(notification.tramiteId);
+                        return (
+                          <button
+                            key={`${notification.contractId}-${notification.id}`}
+                            type="button"
+                            onClick={() => handleAbrirNotificacion(notification)}
+                            className={`w-full rounded-lg border p-3 text-left transition ${
+                              esTramite ? 'hover:bg-blue-50' : 'hover:bg-red-50'
+                            } ${
+                              notification.leida
+                                ? 'border-slate-200 bg-white'
+                                : esTramite ? 'border-blue-200 bg-blue-50/60' : 'border-red-200 bg-red-50/60'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className={`text-xs font-bold ${esTramite ? 'text-blue-900' : 'text-red-800'}`}>
+                                {notification.tipo}
+                              </span>
+                              <span className="shrink-0 text-[10px] font-semibold text-slate-500">
+                                {notification.leida ? 'Leída' : 'Nueva'}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs font-semibold text-blue-950">{notification.projectName}</p>
+                            <p className="mt-1 text-[11px] text-slate-600">
+                              Contrato N.° {notification.contractNumber}
+                              {esTramite ? ` · ${notification.tramiteId}` : ` · Partida ${notification.partida}`}
+                            </p>
+                            <p className="mt-2 text-xs text-slate-700">{notification.detalle}</p>
+                            {esTramite && (
+                              <p className="mt-1 text-[11px] text-slate-600">
+                                Solicitante: {notification.solicitante || 'No especificado'} · Días solicitados: {notification.diasSolicitados}
+                              </p>
+                            )}
+                            <p className="mt-2 text-[10px] text-slate-500">
+                              {notification.usuario} · {new Date(notification.fecha).toLocaleString('es-PE')}
+                            </p>
+                            <span className="mt-2 inline-flex text-xs font-bold text-blue-900">
+                              {esTramite ? 'Ver solicitud' : 'Ver incidencia'}
                             </span>
-                          </div>
-                          <p className="mt-1 text-xs font-semibold text-blue-950">{notification.projectName}</p>
-                          <p className="mt-1 text-[11px] text-slate-600">
-                            Contrato N.° {notification.contractNumber} · Partida {notification.partida}
-                          </p>
-                          <p className="mt-2 text-xs text-slate-700">{notification.detalle}</p>
-                          <p className="mt-2 text-[10px] text-slate-500">
-                            {notification.usuario} · {new Date(notification.fecha).toLocaleString('es-PE')}
-                          </p>
-                        </button>
-                      ))}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </section>
@@ -1096,7 +1386,6 @@ export default function App() {
           {notice.error ? <AlertTriangle size={20} /> : <CheckCircle2 size={20} />}
           <p>{notice.text}</p><button type="button" onClick={() => setNotice(null)} aria-label="Cerrar mensaje">Cerrar</button>
         </div>}
-        <details className="usage-help"><summary>Guía rápida de uso</summary><p>Los módulos disponibles dependen del perfil autenticado. Entidad gestiona la cartera y los contratos; Supervisión y Residencia registran o validan ejecución; Gestión Contractual controla plazos y auditoría. Los cambios de demostración se guardan en este navegador.</p></details>
         {/* TARJETAS DE INDICADORES CLAVE (KPIs) */}
         {activeTab === 'entidad' && (
           <EntityDashboard
@@ -1211,7 +1500,9 @@ export default function App() {
                       Alerta Crítica Activa: {resumen.rojas} partida(s) requieren atención inmediata
                     </h3>
                     <p className="text-xs text-slate-600 mt-0.5">
-                      La validación de avance físico y valorización permanece bloqueada hasta registrar la evidencia de subsanación en campo.
+                      {usuarioActual.rol === 'ENTIDAD'
+                        ? 'El avance y las valorizaciones seguirán bloqueados hasta que Residente registre la evidencia de subsanación y Supervisión la valide.'
+                        : 'La validación de avance físico y valorización permanece bloqueada hasta registrar la evidencia de subsanación en campo.'}
                     </p>
                   </div>
                 </div>
@@ -1220,7 +1511,7 @@ export default function App() {
                     onClick={() => handleTabChange('ejecucion')}
                     className="bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shrink-0 flex items-center gap-1.5 transition cursor-pointer"
                   >
-                    Gestionar en Campo
+                    {usuarioActual.rol === 'ENTIDAD' ? 'Revisar ejecución' : 'Gestionar en campo'}
                   </button>
                 )}
               </div>
@@ -1381,6 +1672,16 @@ export default function App() {
                         </span>
                         <span className="text-slate-600 font-medium">{b.evidencia}</span>
                       </div>
+                      {b.evidenciaDataUrl && (
+                        <a href={b.evidenciaDataUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block">
+                          <img
+                            src={b.evidenciaDataUrl}
+                            alt={`Evidencia fotográfica del registro ${b.partida}`}
+                            loading="lazy"
+                            className="max-h-40 max-w-full rounded-lg border border-slate-200 object-contain"
+                          />
+                        </a>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1421,9 +1722,9 @@ export default function App() {
             section="ejecucion"
             contract={contratoActual}
             contracts={contratos}
-            canEdit={puedeEditarProyecto}
-            canControl={hasPermission('CONTROL_PLAZOS')}
-            canValidate={puedeValidarCalidad}
+            canEdit={puedeEditarProyecto && puedeAdministrarDatosEjecucion}
+            canControl={hasPermission('CONTROL_PLAZOS') && puedeAdministrarDatosEjecucion}
+            canValidate={puedeValidarCalidad && puedeAdministrarDatosEjecucion}
             canLiquidate={puedeLiquidar}
             onUpdateContract={updateCurrentContract}
             onCreateContract={handleCrearContrato}
@@ -1447,7 +1748,8 @@ export default function App() {
             MÓDULO DE CONTRATO: CARGA DE PARTIDAS Y VALIDACIÓN DOCUMENTAL
            ===================================================================== */}
         {activeTab === 'contrato' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className={`grid grid-cols-1 gap-6 ${puedeEditarProyecto ? 'lg:grid-cols-2' : ''}`}>
+            {puedeEditarProyecto && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
               <div>
                 <h2 className="text-base font-bold text-blue-950">
@@ -1458,33 +1760,28 @@ export default function App() {
                 </p>
               </div>
 
-              {puedeEditarProyecto ? (
-                <label className="border-2 border-dashed border-blue-200 bg-blue-50/40 hover:bg-blue-50 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition text-center">
-                  <div className="p-3 bg-white rounded-full shadow-sm border border-blue-100 mb-3">
-                    <Upload className="w-6 h-6 text-blue-700" />
-                  </div>
-                  <span className="text-sm font-bold text-blue-950">Subir archivo CSV de presupuesto</span>
-                  <span className="text-xs text-slate-500 mt-1 max-w-md">
-                    Columnas: codigo, descripcion, unidad, metradoContratado, metradoProgramado, metradoEjecutado, presupuestoContratado, gastoEjecutado, subcontratista
-                  </span>
-                  <input type="file" accept=".csv,text/csv" onChange={handleCargarCSVPartidas} className="hidden" />
-                </label>
-              ) : (
-                <p className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
-                  La carga de partidas está habilitada para el perfil de Entidad.
-                </p>
-              )}
+              <label className="border-2 border-dashed border-blue-200 bg-blue-50/40 hover:bg-blue-50 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition text-center">
+                <div className="p-3 bg-white rounded-full shadow-sm border border-blue-100 mb-3">
+                  <Upload className="w-6 h-6 text-blue-700" />
+                </div>
+                <span className="text-sm font-bold text-blue-950">Subir archivo CSV de presupuesto</span>
+                <span className="text-xs text-slate-500 mt-1 max-w-md">
+                  Columnas: codigo, descripcion, unidad, metradoContratado, metradoProgramado, metradoEjecutado, presupuestoContratado, gastoEjecutado, subcontratista
+                </span>
+                <input type="file" accept=".csv,text/csv" onChange={handleCargarCSVPartidas} className="hidden" />
+              </label>
 
               <div className="bg-blue-50/60 p-4 rounded-lg border border-blue-100 text-xs text-blue-950 space-y-1">
                 <p><strong>Contrato Activo:</strong> N° {contratoActual?.numero}</p>
                 <p><strong>Sistema de Contratación:</strong> {contratoActual?.sistema} • Plazo: {contratoActual?.plazoDias} días calendario</p>
               </div>
             </div>
+            )}
 
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+            <div className={`bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 ${puedeEditarProyecto ? '' : 'lg:col-span-2'}`}>
               <div>
                 <h2 className="text-base font-bold text-blue-950">
-                  2. Verificación de Consistencia Documental
+                  Verificación de Consistencia Documental
                 </h2>
                 <p className="text-xs text-slate-500 mt-1">
                   Compara plazos y presupuestos, y revisa terreno, permisos y especificaciones técnicas.
@@ -1547,14 +1844,18 @@ export default function App() {
           <div className="max-w-3xl mx-auto bg-white p-6 sm:p-8 rounded-xl border border-slate-200 shadow-sm">
             <div className="border-b border-slate-100 pb-4 mb-6">
               <h2 className="text-lg font-bold text-blue-950">
-                Registro Diario en Campo y Control de Calidad
+                {usuarioActual.rol === 'ENTIDAD'
+                  ? 'Seguimiento de Ejecución y Calidad'
+                  : 'Registro Diario en Campo y Control de Calidad'}
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                Ingresa avances físicos, gastos ejecutados, evidencias fotográficas o incidencias técnicas vinculadas a cada partida.
+                {usuarioActual.rol === 'ENTIDAD'
+                  ? 'Consulta los avances registrados por Residente, las incidencias y el estado de las subsanaciones.'
+                  : 'Ingresa avances físicos, gastos ejecutados, evidencias fotográficas o incidencias técnicas vinculadas a cada partida.'}
               </p>
             </div>
 
-            {(hasPermission('REGISTRAR_AVANCE') || hasPermission('REPORTAR_INCIDENCIA')) && partidas.length > 0 && (
+            {puedeRegistrarCampo && partidas.length > 0 && (
             <form onSubmit={handleRegistrarCampo} className="space-y-5">
               <div>
                 <label htmlFor="field-1" className="block text-xs font-bold text-slate-700 mb-1.5">Partida Contractual</label>
@@ -1616,7 +1917,7 @@ export default function App() {
                     <option value="Observación Preventiva">Observación Preventiva (Material / Rendimiento)</option>
                     <option value="No Conformidad de Calidad">No Conformidad de Calidad (Bloquea avance)</option>
                     {usuarioActual.rol === 'RESIDENTE' && <option value="Incidencia Crítica">Incidencia Crítica de Calidad (Notificar a Entidad)</option>}
-                    {hasPermission('LEVANTAR_BLOQUEO') && <option value="Subsanación Aprobada">Subsanación Aprobada (Desbloquea partida)</option>}
+                    {puedeLevantarBloqueo && <option value="Subsanación Aprobada">Subsanación Aprobada (Desbloquea partida)</option>}
                   </select>
                 </div>
 
@@ -1624,17 +1925,42 @@ export default function App() {
                   <label htmlFor="evidencia" className="block text-xs font-bold text-slate-700 mb-1.5">
                     Evidencia Fotográfica / Sustento
                   </label>
-                  <div className="flex items-center gap-2 border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm bg-slate-50">
-                    <Camera className="w-4 h-4 text-blue-700 shrink-0" />
+                  <div className="flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm">
+                    <Camera className="h-4 w-4 shrink-0 text-blue-700" />
                     <input
                       id="evidencia"
-                      type="text"
-                      placeholder="Ej. foto_probeta_concreto.jpg"
-                      value={evidenciaNombre}
-                      onChange={(e) => setEvidenciaNombre(e.target.value)}
-                      className="bg-transparent w-full text-sm focus:outline-none"
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      aria-label="Subir foto de evidencia"
+                      onChange={handleSeleccionarEvidencia}
+                      disabled={evidenciaCargando}
+                      className="min-w-0 w-full text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-100 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-blue-900"
                     />
                   </div>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {evidenciaCargando
+                      ? 'Preparando foto…'
+                      : evidenciaFoto
+                        ? `Foto adjunta: ${evidenciaNombre}`
+                        : 'Selecciona o toma una foto. Se comprime y guarda localmente.'}
+                  </p>
+                  {evidenciaFoto && (
+                    <div className="mt-2 flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-2">
+                      <img
+                        src={evidenciaFoto.dataUrl}
+                        alt={`Vista previa de ${evidenciaNombre}`}
+                        className="h-16 w-16 rounded-md object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setEvidenciaFoto(null)}
+                        className="rounded-md px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+                      >
+                        Quitar foto
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1647,25 +1973,34 @@ export default function App() {
                   placeholder="Describe los trabajos realizados, ensayos de calidad o motivo de la incidencia..."
                   value={comentarioCampo}
                   onChange={(e) => setComentarioCampo(e.target.value)}
-                  required={incidenciaTipo === 'Incidencia Crítica'}
+                  required={usuarioActual.rol === 'RESIDENTE' && incidenciaTipo !== 'Ninguna'}
                   className="w-full border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm focus:border-blue-600 focus:outline-none"
                 ></textarea>
               </div>
 
               <button
                 type="submit"
-                className="w-full bg-blue-900 hover:bg-blue-800 text-white font-semibold py-3 rounded-lg text-sm shadow-sm transition cursor-pointer"
+                disabled={evidenciaCargando}
+                className="w-full rounded-lg bg-blue-900 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-wait disabled:opacity-60"
               >
-                Guardar Registro y Actualizar Indicadores
+                {evidenciaCargando ? 'Preparando foto…' : 'Guardar registro de campo'}
               </button>
             </form>
             )}
-            {(hasPermission('REGISTRAR_AVANCE') || hasPermission('REPORTAR_INCIDENCIA')) && partidas.length === 0 && (
+            {puedeRegistrarCampo && partidas.length === 0 && (
               <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                Este expediente todavía no tiene partidas. El perfil de Entidad puede importarlas desde el módulo Contrato.
+                Este expediente todavía no tiene partidas. Solicita a Entidad que las importe desde el módulo Contrato.
               </p>
             )}
-            {(hasPermission('VALIDAR_CALIDAD') || hasPermission('LEVANTAR_BLOQUEO')) && (
+            {['RESIDENTE', 'SUPERVISOR', 'ENTIDAD'].includes(usuarioActual.rol) && (
+              <IncidentList
+                incidencias={incidencias}
+                role={usuarioActual.rol}
+                userId={usuarioActual.id}
+                onApprove={handleDarVistoBueno}
+              />
+            )}
+            {(puedeValidarCalidad || puedeLevantarBloqueo) && (
               <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="font-bold text-blue-950">Validación de calidad</h3>
                 <p className="mt-1 text-xs text-slate-500">Supervisión puede aprobar la subsanación y levantar el bloqueo de una partida.</p>
@@ -1676,7 +2011,7 @@ export default function App() {
                         <p className="text-sm font-bold text-red-800">{item.codigo} · {item.descripcion}</p>
                         <p className="mt-1 text-xs text-red-700">{item.observacion}</p>
                       </div>
-                      {hasPermission('LEVANTAR_BLOQUEO') && (
+                      {puedeLevantarBloqueo && (
                         <button
                           type="button"
                           onClick={() => handleAprobarSubsanacion(item.codigo)}
@@ -1700,132 +2035,19 @@ export default function App() {
             MÓDULO DE TRÁMITES Y PLAZOS CONTRACTUALES
            ===================================================================== */}
         {activeTab === 'tramites' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {puedeSolicitarTramite && (
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit">
-              <h2 className="text-base font-bold text-blue-950 mb-1">Nueva solicitud de trámite</h2>
-              <p className="text-xs text-slate-500 mb-5">
-                Control de plazos legales para pronunciamientos (Ley N° 32069)
-              </p>
-              <form onSubmit={handleAgregarTramite} className="space-y-4">
-                <div>
-                  <label htmlFor="field-6" className="block text-xs font-bold text-slate-700 mb-1.5">Tipo de Trámite</label>
-                  <select id="field-6"
-                    value={nuevoTramiteTipo}
-                    onChange={(e) => setNuevoTramiteTipo(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
-                  >
-                    <option>Ampliación de Plazo</option>
-                    <option>Prestación Adicional</option>
-                    <option>Suspensión de Plazo</option>
-                    <option>Consulta Técnica / Absolución</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="field-7" className="block text-xs font-bold text-slate-700 mb-1.5">Sustento / Asunto</label>
-                  <input id="field-7"
-                    type="text"
-                    required
-                    placeholder="Ej. Ampliación por lluvias intensas"
-                    value={nuevoTramiteAsunto}
-                    onChange={(e) => setNuevoTramiteAsunto(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="field-8" className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Días hábiles para pronunciamiento
-                  </label>
-                  <input id="field-8"
-                    type="number"
-                    min="1"
-                    max="30"
-                    value={nuevoTramiteDias}
-                    onChange={(e) => setNuevoTramiteDias(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full flex items-center justify-center gap-1.5 bg-blue-900 hover:bg-blue-800 text-white font-semibold py-2.5 rounded-lg text-sm transition cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" /> Registrar y Activar Alerta
-                </button>
-              </form>
-            </div>
-            )}
-
-            <div className={`${puedeSolicitarTramite ? 'lg:col-span-2' : 'lg:col-span-3'} bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden`}>
-              <div className="px-6 py-4 border-b border-slate-200">
-                <h2 className="text-base font-bold text-blue-950">
-                  Seguimiento de Solicitudes y Vencimientos Contractuales
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Prevención de consentimientos tácitos o pronunciamientos tardíos
-                </p>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {tramites.map((t) => (
-                  <div key={t.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/70 transition">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-                          {t.id}
-                        </span>
-                        <span className="text-sm font-bold text-slate-900">{t.tipo}</span>
-                      </div>
-                      <p className="text-xs text-slate-700 mt-1.5">{t.asunto}</p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        <strong>Responsable:</strong> {t.responsable} • <strong>Pendiente:</strong> {t.docsPendientes}
-                      </p>
-                      {t.opinion && <p className="mt-2 text-xs font-semibold text-blue-800">Opinión de Supervisión: {t.opinion}</p>}
-                    </div>
-
-                    <div className="flex items-center gap-3 shrink-0">
-                      {hasPermission('OPINAR_TRAMITE') && (
-                        <label className="text-xs font-semibold text-slate-600">
-                          Opinión
-                          <select
-                            aria-label={`Registrar opinión para ${t.id}`}
-                            value={t.opinion || ''}
-                            onChange={event => handleOpinarTramite(t.id, event.target.value)}
-                            className="mt-1 block rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                          >
-                            <option value="">Pendiente</option>
-                            <option value="Conforme">Conforme</option>
-                            <option value="Observado">Observado</option>
-                          </select>
-                        </label>
-                      )}
-                      <div className="text-right">
-                        <span
-                          className={`inline-block px-2.5 py-1 rounded-full text-xs font-bold border ${
-                            t.estado === 'Crítico'
-                              ? 'bg-red-50 text-red-700 border-red-200'
-                              : t.estado === 'Preventivo'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          }`}
-                        >
-                          {t.estado === 'Atendido' ? 'Atendido' : `Vence en ${t.diasRestantes} días`}
-                        </span>
-                        <p className="text-xs text-slate-500 mt-1">Límite: {t.fechaLimite}</p>
-                      </div>
-
-                      {t.estado !== 'Atendido' && (hasPermission('APROBAR_TRAMITE') || hasPermission('CONTROL_PLAZOS')) && (
-                        <button
-                          onClick={() => handleMarcarTramiteAtendido(t.id)}
-                          className="text-xs bg-blue-900 hover:bg-blue-800 text-white font-medium px-3 py-1.5 rounded-lg transition cursor-pointer"
-                        >
-                          {hasPermission('APROBAR_TRAMITE') ? 'Aprobar / Atendido' : 'Marcar Atendido'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <TramiteWorkflow
+            contract={contratoActual}
+            tramites={tramites}
+            role={usuarioActual.rol}
+            canSolicitar={puedeSolicitarTramite}
+            onCreate={handleAgregarTramite}
+            onRegisterReceipt={handleRegistrarRecepcionTramite}
+            onStartReview={handleIniciarRevisionTramite}
+            onOpinion={handleOpinarTramite}
+            onStartEvaluation={handleIniciarEvaluacionTramite}
+            onResolve={handleResolverTramite}
+            selectedTramiteId={selectedTramiteId}
+          />
         )}
       </main>
 

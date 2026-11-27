@@ -5,6 +5,10 @@ import { calcularAvanceFisico } from '../physicalProgress';
 const INPUT_CLASS = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 disabled:bg-slate-100 disabled:text-slate-500';
 const CURRENCY_FORMAT = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN', maximumFractionDigits: 0 });
 const formatCurrency = (value) => CURRENCY_FORMAT.format(Number(value) || 0);
+const localDateValue = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
 
 function Field({ label, value, onChange, type = 'text', options, disabled, required = false }) {
   return (
@@ -85,6 +89,7 @@ export default function ProjectWorkspace({
   const [valorizationAmount, setValorizationAmount] = useState('');
   const [csvFeedback, setCsvFeedback] = useState(null);
   const [importandoCSV, setImportandoCSV] = useState(false);
+  const [closureFeedback, setClosureFeedback] = useState('');
 
   useEffect(() => {
     setDraft(contract);
@@ -94,6 +99,7 @@ export default function ProjectWorkspace({
   const updateDraft = (field, value) => {
     setDraft(current => ({ ...current, [field]: value }));
     setGuardado(false);
+    setClosureFeedback('');
   };
 
   const saveDraft = (event) => {
@@ -123,6 +129,9 @@ export default function ProjectWorkspace({
   const canEditControlFields = canEdit || canControl;
 
   if (!contract) return <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-800">Selecciona o crea un expediente para continuar.</p>;
+  if (section === 'cierre' && !canLiquidate) {
+    return <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Recepción y liquidación son gestionadas exclusivamente por el perfil Entidad.</p>;
+  }
 
   if (section === 'expediente') {
     return (
@@ -364,25 +373,51 @@ export default function ProjectWorkspace({
   }
 
   if (section === 'cierre') {
-    const marcarRecepcion = () => onUpdateContract({
-      recepcionEstado: 'Recepcionada',
-      recepcionFecha: draft.recepcionFecha || new Date().toISOString().slice(0, 10),
-      estado: 'Recepcionada'
-    });
-    const marcarLiquidacion = () => onUpdateContract({
-      liquidacionEstado: 'Liquidada',
-      liquidacionFecha: draft.liquidacionFecha || new Date().toISOString().slice(0, 10),
-      estado: 'Liquidación'
-    });
+    const marcarRecepcion = () => {
+      if (!canLiquidate) return;
+      if (!String(draft.recepcionActa || '').trim()) {
+        setClosureFeedback('Registra el número o referencia del acta antes de confirmar la recepción.');
+        return;
+      }
+      const changes = {
+        recepcionEstado: 'Recepcionada',
+        recepcionFecha: draft.recepcionFecha || localDateValue(),
+        recepcionActa: String(draft.recepcionActa || '').trim(),
+        estado: 'Recepcionada'
+      };
+      onUpdateContract(changes);
+      setClosureFeedback('Recepción registrada por Entidad.');
+    };
+    const marcarLiquidacion = () => {
+      if (!canLiquidate) return;
+      if (draft.recepcionEstado !== 'Recepcionada') {
+        setClosureFeedback('Registra la recepción de la obra antes de iniciar la liquidación.');
+        return;
+      }
+      const changes = {
+        liquidacionEstado: 'Liquidada',
+        liquidacionFecha: draft.liquidacionFecha || localDateValue(),
+        liquidacionMonto: Number(draft.liquidacionMonto) || 0,
+        observacionesCierre: draft.observacionesCierre,
+        estado: 'Liquidación'
+      };
+      onUpdateContract(changes);
+      setClosureFeedback('Liquidación registrada por Entidad.');
+    };
 
     return (
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {closureFeedback && (
+          <p className={`xl:col-span-2 rounded-lg p-3 text-sm ${closureFeedback.startsWith('Registra') ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'}`} role="status">
+            {closureFeedback}
+          </p>
+        )}
         <SectionCard title="Recepción de obra" description="Registra fecha, acta y estado de recepción.">
           <div className="space-y-4">
             <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-900">Estado: {draft.recepcionEstado}</p>
-            <Field label="Fecha de recepción" type="date" value={draft.recepcionFecha} onChange={value => updateDraft('recepcionFecha', value)} disabled={!canEdit && !canValidate} />
-            <Field label="Acta de recepción" value={draft.recepcionActa} onChange={value => updateDraft('recepcionActa', value)} disabled={!canEdit && !canValidate} />
-            {(canEdit || canValidate) && (
+            <Field label="Fecha de recepción" type="date" value={draft.recepcionFecha} onChange={value => updateDraft('recepcionFecha', value)} disabled={!canLiquidate} />
+            <Field label="Acta de recepción" value={draft.recepcionActa} onChange={value => updateDraft('recepcionActa', value)} disabled={!canLiquidate} required={canLiquidate} />
+            {canLiquidate && (
               <div className="flex flex-wrap gap-3">
                 <button type="button" onClick={saveDraft} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-900 hover:bg-blue-50">Guardar datos</button>
                 <button type="button" onClick={marcarRecepcion} className="rounded-lg bg-blue-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Registrar recepción</button>
@@ -393,19 +428,19 @@ export default function ProjectWorkspace({
         <SectionCard title="Liquidación" description="Controla el cierre económico y contractual de la obra.">
           <div className="space-y-4">
             <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-900">Estado: {draft.liquidacionEstado}</p>
-            <Field label="Fecha de liquidación" type="date" value={draft.liquidacionFecha} onChange={value => updateDraft('liquidacionFecha', value)} disabled={!canEdit && !canLiquidate} />
-            <Field label="Monto liquidado (S/)" type="number" value={draft.liquidacionMonto} onChange={value => updateDraft('liquidacionMonto', value)} disabled={!canEdit && !canLiquidate} />
+            <Field label="Fecha de liquidación" type="date" value={draft.liquidacionFecha} onChange={value => updateDraft('liquidacionFecha', value)} disabled={!canLiquidate} />
+            <Field label="Monto liquidado (S/)" type="number" value={draft.liquidacionMonto} onChange={value => updateDraft('liquidacionMonto', value)} disabled={!canLiquidate} />
             <label className="block text-xs font-semibold text-slate-700">
               Observaciones de cierre
               <textarea
                 rows="3"
                 value={draft.observacionesCierre}
-                disabled={!canEdit && !canLiquidate}
+                disabled={!canLiquidate}
                 onChange={event => updateDraft('observacionesCierre', event.target.value)}
                 className={INPUT_CLASS}
               />
             </label>
-            {(canEdit || canLiquidate) && (
+            {canLiquidate && (
               <div className="flex flex-wrap gap-3">
                 <button type="button" onClick={saveDraft} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-900 hover:bg-blue-50">Guardar datos</button>
                 <button type="button" onClick={marcarLiquidacion} className="rounded-lg bg-blue-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Marcar liquidada</button>
